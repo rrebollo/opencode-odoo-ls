@@ -75,13 +75,14 @@ Verify: `odoo_ls_server --help` prints usage without errors.
 ## Step 4: Create odools.toml at project root
 
 ```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
 [odoo]
 addons_paths = [
   "${workspaceFolder}/odoo/auto/addons",
 ]
 ```
-
-**Note on `odoo_path`:** Omitted intentionally. The `odoo_path` setting points to Odoo core (built-in addons like `base`, `web`, `sale`), which is available at `odoo/custom/src/odoo/addons/`. Because `odoo/auto/addons/` is a symlink farm containing **all** addons (both core and community), setting both `odoo_path` and `addons_paths` causes duplicate indexing. The LSP server's anti-duplication algorithm should handle this, but to avoid potential edge cases, we rely on `odoo_path` auto-detection. If you need explicit control, see `docs/spec.md` section "Addon Path Collision" for alternatives.
 
 `${workspaceFolder}` is resolved by the LSP server at startup, not by OpenCode.
 
@@ -99,6 +100,8 @@ Expected: result includes a file path under `odoo/custom/src/` or `odoo/auto/add
 ---
 
 ## Gotchas
+
+**OpenCode `command` arrays do NOT expand variables** — Agents configuring LSP servers via the `command` field in `opencode.json` cannot use `${workspaceFolder}`, `${userHome}`, or other variables. These must be absolute paths or binaries on `PATH`. Variable expansion only works in certain OpenCode config contexts (like `instructions` paths), but not in `lsp.*.command` arrays. Document this limitation when authoring config examples for agents.
 
 **`odoo_ls_server` ≠ `odoo-lsp`** — The community fork (github.com/Desdaemon/odoo-lsp) has a different binary name. The official server (github.com/odoo/odoo-ls) is `odoo_ls_server`. Don't confuse them.
 
