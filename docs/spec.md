@@ -576,34 +576,11 @@ This configuration **accepts the known overlap** and relies on the LSP server's 
 
 ### Alternative Strategies
 
-**Note: Phase 4 investigation (2026-04-22) identified a critical blocker** — see below.
-
 If empirical testing reveals performance issues or symbol duplication problems:
 
 **Option A:** Omit `odoo_path` and rely on auto-detection (simpler, no overlap)
 
 **Option B:** Use explicit repo collections instead of the symlink farm (more control, requires list maintenance)
-
-### OpenCode LSP Integration: Correct Behavior
-
-**Finding (from OpenCode source code analysis):** OpenCode correctly sets working directory and sends workspace folders to LSP servers.
-
-OpenCode's LSP infrastructure:
-1. Sets `cwd: root` when spawning LSP servers (where `root` is the project/workspace directory)
-2. Sends `initialize` request with `rootUri` and `workspaceFolders` pointing to the project root
-3. `odoo_ls_server` discovers `odools.toml` by walking upward from the workspace folder path received in `initialize`
-
-**Variable expansion:**
-- `${workspaceFolder}` in `odools.toml` **is expanded** by `odoo_ls_server` at runtime using the workspace folder path from LSP initialization (works correctly)
-- Variables in the `command` array in `opencode.json` **are NOT expanded** by OpenCode (use absolute paths or binaries on PATH)
-
-**Tested and verified working (Phase 4 re-execution):**
-- Core symbols (from `odoo_path`) resolve correctly ✓
-- OCA addon symbols (from explicit paths) resolve correctly ✓
-- Private addon symbols (from explicit paths) resolve correctly ✓
-- No duplication or overlap ✓
-
-See `docs/superpowers/findings/2026-04-22-opencode-lsp-investigation.md` for complete analysis and source code references. See `docs/superpowers/plans/2026-04-22-phase4-explicit-addons.md` for Phase 4 test results.
 
 ---
 
