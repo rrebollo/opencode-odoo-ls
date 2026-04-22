@@ -92,10 +92,12 @@ OpenCode plugin examples: https://github.com/anomalyco/opencode/tree/dev/plugins
 - Sibling directories: `account-reconcile/`, `bank-payment/`, `connector/`, `crm/`, `hr/`, `project/`, `queue/`, `sale-workflow/`, `server-tools/`, `storage/`, `timesheet/`, etc. — each a flat collection of related addons (e.g., `timesheet/hr_timesheet_begin_end/`, `timesheet/sale_timesheet_line_exclude/`)
 - Each repo group may contain 1–30+ addons nested at depth 1 (not flat; each addon in its own subdirectory)
 
-**Runtime build artifacts** (generated, not source):
-- `odoo/auto/odoo.conf` — generated config with single `addons_path = /opt/odoo/auto/addons`
-- `odoo/auto/addons/` — symlink farm (936 symlinks) pointing to all addons across `custom/src/`
-- These are inside the Docker container and irrelevant to LSP configuration
+**Build artifacts** (generated, available on host and in Docker):
+- `odoo/auto/odoo.conf` — generated config with `addons_path = /opt/odoo/auto/addons` (Docker path)
+- `odoo/auto/addons/` — **symlink farm on the host filesystem** (936 symlinks) pointing to all addons across `custom/src/`
+  - Example: `odoo/auto/addons/hr_timesheet_begin_end` → `../../custom/src/timesheet/hr_timesheet_begin_end`
+  - **Available on host**: the symlinks themselves resolve correctly on the host system (not just in Docker)
+- **Implication for LSP**: `${workspaceFolder}/odoo/auto/addons` is a viable alternative to listing individual repo-collection directories
 
 **Python environment:**
 - Host: source code only, no Python dependencies installed
@@ -106,19 +108,40 @@ OpenCode plugin examples: https://github.com/anomalyco/opencode/tree/dev/plugins
 - `odoo/custom/src/repos.yaml` — lists all git repos to clone (created by `gitaggregate`)
 - Can be used for future automation (e.g., listing which OCA repos are in scope)
 
-**For `odools.toml` in a Doodba workspace:**
+**Recommended `odools.toml` in a Doodba workspace (Option A — Symlink Farm):**
+
+The simplest configuration leverages the pre-built symlink farm:
+
 ```toml
 [Odoo]
 # odoo_path points to the Odoo CE source tree (cloned under custom/src/)
 odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
 
-# addons_paths lists each repo-collection directory
+# Single path: use the generated symlink farm (all 936 addons in one flat dir)
+addons_paths = [
+  "${workspaceFolder}/odoo/auto/addons",
+]
+
+[python]
+# Host Python has no Odoo deps; runtime is in Docker
+# Omit or set to system Python; type resolution may degrade gracefully
+```
+
+**Alternative `odools.toml` (Option B — Explicit Repo Collections):**
+
+If you prefer to list repo collections explicitly (finer control, diagnostic filtering):
+
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
+# List each repo-collection directory
 # Each contains one or more addons as subdirectories
 addons_paths = [
   "${workspaceFolder}/odoo/custom/src/account-reconcile",
   "${workspaceFolder}/odoo/custom/src/bank-payment",
   "${workspaceFolder}/odoo/custom/src/connector",
-  # ... (one per repo group, NOT auto/addons)
+  # ... (one per repo group)
   "$autoDetectAddons",  # re-enable auto-detection for any addons at workspace root
 ]
 
@@ -126,6 +149,10 @@ addons_paths = [
 # Host Python has no Odoo deps; runtime is in Docker
 # Omit or set to system Python; type resolution may degrade gracefully
 ```
+
+**Pros/Cons:**
+- **Option A (Symlink Farm):** Simpler (1 path), auto-generated, all addons visible. Cons: LSP may treat 936 symlinks as one flattened namespace.
+- **Option B (Repo Collections):** More control, maintains repo grouping structure, better for diagnostic scoping. Cons: requires listing each collection (but can be auto-generated from `repos.yaml`).
 
 ## Non-Doodba Odoo Environments
 
