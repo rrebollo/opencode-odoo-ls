@@ -584,32 +584,26 @@ If empirical testing reveals performance issues or symbol duplication problems:
 
 **Option B:** Use explicit repo collections instead of the symlink farm (more control, requires list maintenance)
 
-### OpenCode LSP Working Directory Limitation (BLOCKER for Phase 4)
+### OpenCode LSP Integration: Correct Behavior
 
-**Finding:** `odoo_ls_server` cannot discover `odools.toml` when launched via OpenCode's LSP integration.
+**Finding (from OpenCode source code analysis):** OpenCode correctly sets working directory and sends workspace folders to LSP servers.
 
-**Root cause:** 
-- `odoo_ls_server` expects `odools.toml` in the LSP server's working directory (workspace root)
-- OpenCode's LSP infrastructure **does not set the working directory** for spawned LSP servers
-- The `--config-path` flag in `opencode.json` `command` arrays appears to be ignored or not passed through correctly
-- Result: LSP server initializes with empty config (`odoo_path: None, addons_paths: {}`), no addons indexed
+OpenCode's LSP infrastructure:
+1. Sets `cwd: root` when spawning LSP servers (where `root` is the project/workspace directory)
+2. Sends `initialize` request with `rootUri` and `workspaceFolders` pointing to the project root
+3. `odoo_ls_server` discovers `odools.toml` by walking upward from the workspace folder path received in `initialize`
 
-**Evidence from Phase 4 test:**
-- Created explicit `odools.toml` with 17 addon paths at project root
-- Updated `opencode.json` to pass `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml", ...]`
-- LSP server still logged: `Full Config: ConfigEntry { odoo_path: None, addons_paths: {} }`
-- Symbol queries returned no results
+**Variable expansion:**
+- `${workspaceFolder}` in `odools.toml` **is expanded** by `odoo_ls_server` at runtime using the workspace folder path from LSP initialization (works correctly)
+- Variables in the `command` array in `opencode.json` **are NOT expanded** by OpenCode (use absolute paths or binaries on PATH)
 
-**Impact:**
-- Explicit addon paths strategy cannot be tested (config never reaches LSP server)
-- Current `auto/addons` approach is the only working configuration
-- Both strategies are affected equally by this OpenCode limitation
+**Tested and verified working (Phase 4 re-execution):**
+- Core symbols (from `odoo_path`) resolve correctly ✓
+- OCA addon symbols (from explicit paths) resolve correctly ✓
+- Private addon symbols (from explicit paths) resolve correctly ✓
+- No duplication or overlap ✓
 
-**Workaround for future versions:**
-- Requires OpenCode enhancement to set working directory for LSP servers, OR
-- Requires `odoo_ls_server` to accept config via environment variables or alternative discovery mechanism
-
-See `docs/superpowers/plans/2026-04-22-phase4-explicit-addons.md` for detailed test results and decision logic.
+See `docs/superpowers/findings/2026-04-22-opencode-lsp-investigation.md` for complete analysis and source code references. See `docs/superpowers/plans/2026-04-22-phase4-explicit-addons.md` for Phase 4 test results.
 
 ---
 
