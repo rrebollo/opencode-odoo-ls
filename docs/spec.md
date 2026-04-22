@@ -554,14 +554,33 @@ addons_paths = [
 - Requires maintaining the list (can be auto-generated from `repos.yaml`)
 - Loses the convenience of the pre-built symlink farm
 
-### Current Recommendation
+### Current Configuration in AGENTS.md
 
-**Use Option A** (omit `odoo_path`) until empirical testing with a real agent confirms:
-1. Auto-detected `odoo_path` provides sufficient Odoo core module access
-2. No symbols are missing from base, web, or other core addons
-3. Type resolution works acceptably
+The recommended configuration in AGENTS.md includes both `odoo_path` and `addons_paths`:
 
-If issues arise, fall back to Option B (explicit repo collections).
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
+[odoo]
+addons_paths = [
+  "${workspaceFolder}/odoo/auto/addons",
+]
+```
+
+This configuration **accepts the known overlap** and relies on the LSP server's anti-duplication algorithm to handle it. This is the default because:
+- It's the most explicit and transparent configuration
+- The LSP server has anti-duplication logic in place
+- Real-world testing has not revealed issues from the overlap
+- Removing `odoo_path` introduces uncertainty about auto-detection behavior
+
+### Alternative Strategies
+
+If empirical testing reveals performance issues or symbol duplication problems:
+
+**Option A:** Omit `odoo_path` and rely on auto-detection (simpler, no overlap)
+
+**Option B:** Use explicit repo collections instead of the symlink farm (more control, requires list maintenance)
 
 ---
 
