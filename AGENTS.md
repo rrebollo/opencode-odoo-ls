@@ -4,17 +4,34 @@ Configure Odoo Language Server Protocol (LSP) support for OpenCode in a Doodba p
 
 ---
 
-## Step 1: Confirm you are in a Doodba project
+## For Agents: How to Use This Guide
 
-Before doing anything, verify:
+This guide is designed for agents to follow. It provides:
 
+- **LITERAL instructions** — marked clearly (e.g., "LITERAL — use exactly as shown")
+- **FLEXIBLE choices** — marked clearly (e.g., "FLEXIBLE — your choice") where you should decide based on project structure
+- **Variable placeholders** — paths like `/your/project/path` or `<repo-name>` that YOU must substitute with actual values
+- **Decision points** — places where the setup depends on your project's layout
+
+**Approach:** Read through the entire guide first. Then execute the steps, adapting paths and choices to your specific project structure. If something doesn't match your layout, check the "Debugging" section or refer to `docs/VERIFIED_FACTS.md` for more context.
+
+---
+
+## Prerequisites: Confirm Project Type
+
+Before configuring LSP, determine your project environment:
+
+**Doodba project?** (Docker-based, recommended target)
 ```bash
-grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA OK" || echo "NOT DOODBA"
-ls odoo/auto/addons/ | wc -l   # must be > 0 (gitaggregate has run)
-ls odoo/custom/src/odoo/odoo-bin  # must exist
+grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA OK"
 ```
 
-If `odoo/auto/addons/` is empty: gitaggregate has not run. Stop — the symlink farm must exist before configuring LSP.
+**Requirements for any Odoo project:**
+- Odoo source code at a known path (e.g., `odoo/custom/src/odoo/` for Doodba, or your project's layout)
+- Addon directories discoverable (e.g., multiple git repos cloned, or a symlink farm)
+- `gitaggregate` or equivalent run to populate the addon directories (Doodba-specific)
+
+> **For non-Doodba projects:** Adapt the paths in Step 4 (addon discovery) to match your layout. The LSP setup itself (Steps 2–5) is the same for any Odoo environment.
 
 ---
 
@@ -74,58 +91,64 @@ Verify: `odoo_ls_server --help` prints usage without errors.
 
 ## Step 4: Create odools.toml at project root
 
+### Template Structure (LITERAL — use exactly as shown)
+
 ```toml
 [Odoo]
 odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
 
 [odoo]
 addons_paths = [
-  "${workspaceFolder}/odoo/custom/src/account-reconcile",
-  "${workspaceFolder}/odoo/custom/src/bank-payment",
-  "${workspaceFolder}/odoo/custom/src/bank-statement-import",
-  "${workspaceFolder}/odoo/custom/src/binhex-calendar",
-  "${workspaceFolder}/odoo/custom/src/binhex-server-backend",
-  "${workspaceFolder}/odoo/custom/src/canal",
-  "${workspaceFolder}/odoo/custom/src/connector",
-  "${workspaceFolder}/odoo/custom/src/connector-interfaces",
-  "${workspaceFolder}/odoo/custom/src/crm",
-  "${workspaceFolder}/odoo/custom/src/e-learning",
-  "${workspaceFolder}/odoo/custom/src/event",
-  "${workspaceFolder}/odoo/custom/src/field-service",
-  "${workspaceFolder}/odoo/custom/src/hr",
-  "${workspaceFolder}/odoo/custom/src/hr-attendance",
-  "${workspaceFolder}/odoo/custom/src/hr-holidays",
-  "${workspaceFolder}/odoo/custom/src/partner-contact",
-  "${workspaceFolder}/odoo/custom/src/payroll",
-  "${workspaceFolder}/odoo/custom/src/private",
-  "${workspaceFolder}/odoo/custom/src/project",
-  "${workspaceFolder}/odoo/custom/src/queue",
-  "${workspaceFolder}/odoo/custom/src/reporting-engine",
-  "${workspaceFolder}/odoo/custom/src/sale-workflow",
-  "${workspaceFolder}/odoo/custom/src/server-backend",
-  "${workspaceFolder}/odoo/custom/src/server-env",
-  "${workspaceFolder}/odoo/custom/src/server-tools",
-  "${workspaceFolder}/odoo/custom/src/server-ux",
-  "${workspaceFolder}/odoo/custom/src/spreadsheet",
-  "${workspaceFolder}/odoo/custom/src/stock-logistics-transport",
-  "${workspaceFolder}/odoo/custom/src/stock-logistics-workflow",
-  "${workspaceFolder}/odoo/custom/src/storage",
-  "${workspaceFolder}/odoo/custom/src/timesheet",
-  "${workspaceFolder}/odoo/custom/src/web",
+  # ADD YOUR ADDON DIRECTORIES HERE
 ]
 ```
 
-**Why explicit `src/` paths?**
-- Avoids deduplication ambiguity with the `odoo/auto/addons/` symlink farm (which resolves to the same inodes as `odoo_path/addons/`)
-- The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented; explicit paths eliminate this risk
-- Provides clear, deterministic addon discovery
+### Configuration Decisions (FLEXIBLE — your choice)
 
-**For projects with different repo layouts:**
-- Extract the `src/` subdirectory names from `repos.yaml` or `addons.yaml`
-- Replace the list above with your project's actual repo collection directories
-- Keep `odoo` (the core) in `odoo_path`, not in `addons_paths`
+Choose one approach for populating `addons_paths`:
 
-`${workspaceFolder}` is resolved by the LSP server at startup, not by OpenCode.
+#### Option A: Explicit Repository Paths (RECOMMENDED)
+
+List each repo-collection directory explicitly. This avoids symlink deduplication ambiguity.
+
+```toml
+addons_paths = [
+  "${workspaceFolder}/odoo/custom/src/account-reconcile",
+  "${workspaceFolder}/odoo/custom/src/bank-payment",
+  # ... add one path per repo-collection directory in your project
+]
+```
+
+**To generate this list:**
+1. Check your project structure: `ls odoo/custom/src/`
+2. Extract all directories (except `odoo/`)
+3. Add them to the list above
+
+**Why explicit paths?**
+- Avoids deduplication ambiguity with `odoo/auto/addons/` symlink farm
+- LSP anti-deduplication with symlinks is undocumented; explicit paths are safer
+- Deterministic and clear
+
+#### Option B: Symlink Farm
+
+If your project has `odoo/auto/addons/` (generated by `gitaggregate`), you can use:
+
+```toml
+addons_paths = [
+  "${workspaceFolder}/odoo/auto/addons",
+]
+```
+
+**Trade-offs:**
+- ✅ Simpler (1 path instead of 30+)
+- ❌ Creates inode aliasing ambiguity (LSP behavior is undocumented)
+- ❌ May trigger unpredictable deduplication bugs
+
+**Recommendation:** Use Option A unless you have a specific reason to use the symlink farm.
+
+### Variable Expansion
+
+`${workspaceFolder}` is expanded by the LSP server at initialization time (not by OpenCode). This resolves to your Git repository root.
 
 ---
 
@@ -136,15 +159,37 @@ OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
   "Use the lsp tool with workspaceSymbol to search for any class name you know exists in this project. Report the raw result including file path and line number."
 ```
 
-Expected: result includes a file path under `odoo/custom/src/` or `odoo/auto/addons/`. If the lsp tool reports "no LSP server available": restart OpenCode so it picks up the new `opencode.json`.
+Expected: result includes a file path under your addon directories. If the lsp tool reports "no LSP server available": restart OpenCode so it picks up the new `opencode.json`.
+
+### Debugging if verification fails
+
+If LSP is not working:
+
+1. **Confirm files are in place:**
+   ```bash
+   ls -l opencode.json odools.toml
+   ```
+
+2. **Test LSP directly (without agent):**
+   ```bash
+   opencode debug lsp diagnostics <any-py-file-in-project>
+   ```
+
+3. **Check LSP logs:**
+   ```bash
+   opencode debug paths
+   # Then check the log directory shown
+   ```
+
+4. **Verify addon paths exist:**
+   - Check each path in `addons_paths` exists on disk
+   - Confirm it contains addon directories (not just empty folders)
 
 ---
 
 ## Gotchas
 
 **OpenCode `command` arrays do NOT expand variables** — When using `--config-path`, you must use absolute paths or binaries on `PATH`. Variables like `${workspaceFolder}` are NOT expanded by OpenCode. Variable expansion happens in certain contexts (like `instructions` paths), but not in `lsp.*.command` arrays. If you want to use `--config-path`, pass an absolute path like `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml"]`.
-
-**OpenCode `command` arrays do NOT expand variables** — Agents configuring LSP servers via the `command` field in `opencode.json` cannot use `${workspaceFolder}`, `${userHome}`, or other variables. These must be absolute paths or binaries on `PATH`. Variable expansion only works in certain OpenCode config contexts (like `instructions` paths), but not in `lsp.*.command` arrays. Document this limitation when authoring config examples for agents.
 
 **`odoo_ls_server` ≠ `odoo-lsp`** — The community fork (github.com/Desdaemon/odoo-lsp) has a different binary name. The official server (github.com/odoo/odoo-ls) is `odoo_ls_server`. Don't confuse them.
 
