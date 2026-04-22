@@ -74,7 +74,11 @@ opencode debug lsp document-symbols <uri>  # Get symbols from a document
 ## Files Modified
 
 ### In opencode-odoo-ls repository
-1. **AGENTS.md** — Updated Step 4 with all 32 explicit `src/` paths; Gotchas section clarified
+1. **AGENTS.md** — Refactored for agent audiences:
+   - Added "For Agents: How to Use This Guide" section explaining LITERAL vs FLEXIBLE choices
+   - Replaced hardcoded oca-17 paths with flexible template
+   - Step 4 now shows Option A (explicit, RECOMMENDED) and Option B (symlink farm) with trade-offs
+   - Added Debugging section with clear LSP testing steps
 2. **docs/spec.md** — Swapped recommendation order (explicit paths now Option B: RECOMMENDED)
 3. **docs/VERIFIED_FACTS.md** — Added config location requirements; added debug commands section
 4. **CLEANUP_LOG.md** — Added Session 2 entry documenting config restoration
@@ -89,6 +93,7 @@ opencode debug lsp document-symbols <uri>  # Get symbols from a document
 ## Commits Created
 
 ```
+(latest) refactor: rewrite AGENTS.md for agent audiences with clarity on literal vs flexible
 53666dd fix: correct addon path recommendation from symlink farm to explicit src/ paths
 bd7ff07 docs: session 2 — explicit src/ paths, config file locations verified, LSP operational
 ```
@@ -131,6 +136,7 @@ Expected: LSP returns class definitions, field names, method names from Odoo mod
 3. **Documentation must converge:** When Phase 3 testing contradicts Phase 1 assumptions, all referencing docs must be updated
 4. **Experimental flags are client-side:** `OPENCODE_EXPERIMENTAL_LSP_TOOL` runs in OpenCode process, not passed to LSP server
 5. **Archive documents correctly:** Old experiments should be archived in `docs/superpowers/archive/` and README should direct readers to current sources
+6. **Agent documentation needs clarity:** LITERAL vs FLEXIBLE markers, variable placeholders, and decision points make docs usable by agents instead of prescriptive human instructions
 
 ---
 
