@@ -30,7 +30,7 @@ The community fork (https://github.com/Desdaemon/odoo-lsp) has a different binar
     "pyright": { "disabled": true },
     "odoo-ls": {
       "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml", ".js"]
+      "extensions": [".py", ".xml"]
     }
   }
 }
@@ -72,7 +72,7 @@ Two files, placed at project root alongside `odoo/` and `.copier-answers.yml`:
     "pyright": { "disabled": true },
     "odoo-ls": {
       "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml", ".js"]
+      "extensions": [".py", ".xml"]
     }
   }
 }
@@ -97,11 +97,11 @@ addons_paths = [
 
 ---
 
-## Blocked Before Phase 3 PoC
+## Resolved: Blockers Before Phase 3 PoC
 
-- [ ] Does `odoo_ls_server` need `--stdio` flag, or is it automatic?
-- [ ] Does it handle `.js` files (Odoo OWL components)?
-- [ ] Does disabling pyright at workspace scope affect non-Odoo `.py` files in the same project?
+- [x] `odoo_ls_server` does NOT need `--stdio` — stdio is the default transport; `--use-tcp` is the opt-in alternative
+- [x] `.js` files NOT supported by `odoo_ls_server` — only `.py`, `.xml`, `.csv`; `.js` excluded from `extensions`
+- [x] Disabling pyright via `opencode.json` is workspace-wide — known tradeoff, acceptable for dedicated Odoo projects
 
 ---
 

@@ -252,6 +252,49 @@ addons_paths = [
 
 ---
 
+## How OpenCode LSP Surfaces to Agents
+
+OpenCode is a CLI tool — there is no human editor UI. LSP value reaches the agent
+through two distinct mechanisms (verified from OpenCode source: `tool/edit.ts`,
+`tool/lsp.ts`, `lsp/diagnostic.ts`):
+
+**1. Passive: Diagnostics injected into tool results (automatic)**
+
+After every `edit` or `write` tool call, OpenCode:
+1. Notifies the LSP server of the file change
+2. Waits up to 3 seconds for diagnostics (`publishDiagnostics`)
+3. Appends ERROR-severity diagnostics to the tool result text:
+
+```
+LSP errors detected in this file, please fix:
+<diagnostics file="path/to/file.py">
+ERROR [12:5] some error message
+</diagnostics>
+```
+
+The agent sees this in the tool response and can fix errors immediately.
+Only severity=1 (ERROR) diagnostics are shown; warnings/hints/info are dropped.
+Up to 5 other files in the project also have their diagnostics reported.
+
+**2. Active: `lsp` tool for code-intelligence queries (on-demand)**
+
+The agent can explicitly call the `lsp` tool:
+
+| Operation | LSP method | Use for Odoo |
+|---|---|---|
+| `goToDefinition` | `textDocument/definition` | Jump to model/field definition |
+| `hover` | `textDocument/hover` | Get field type and docstring |
+| `workspaceSymbol` | `workspace/symbol` | Find model class by name |
+| `findReferences` | `textDocument/references` | Find all uses of a field |
+| `documentSymbol` | `textDocument/documentSymbol` | List all fields/methods in a model |
+
+**What is NOT available:**
+- No `textDocument/completion` — OpenCode does not declare this capability;
+  completions are never fetched from any LSP server
+- No automatic diagnostics on `read` — only `edit`/`write` triggers injection
+
+---
+
 ## Minimum Viable Configuration (Doodba)
 
 The simplest working integration for a Doodba workspace requires **two files at the project root**, alongside `odoo/` and `.copier-answers.yml`:
@@ -265,7 +308,7 @@ The simplest working integration for a Doodba workspace requires **two files at 
     "pyright": { "disabled": true },
     "odoo-ls": {
       "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml", ".js"]
+      "extensions": [".py", ".xml"]
     }
   }
 }
@@ -293,10 +336,11 @@ addons_paths = [
 ### Phase 3 PoC Target
 
 Test these two files on a real Doodba project and verify:
-1. OpenCode recognizes `odoo-ls` as a valid LSP server
-2. `odoo_ls_server` starts successfully with `odools.toml` discovery
-3. Pyright is suppressed (no duplicate completions for Odoo code)
-4. Code assistance works: completions on Odoo models, go-to-definition for fields, etc.
+1. `odoo_ls_server` starts when OpenCode opens `.py` or `.xml` files in the workspace
+2. `odools.toml` is discovered and `${workspaceFolder}` resolves correctly at LSP init
+3. After an agent edits a `.py` file, Odoo LSP diagnostics (not pyright) appear in tool output
+4. `lsp` tool → `workspaceSymbol` for an Odoo model returns a result (workspace indexed)
+5. `lsp` tool → `hover` on an Odoo field returns field type / documentation
 
 ---
 
