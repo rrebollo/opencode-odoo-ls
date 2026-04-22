@@ -31,9 +31,17 @@ odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
 
 [odoo]
 addons_paths = [
-  "${workspaceFolder}/odoo/auto/addons",
+  "${workspaceFolder}/odoo/custom/src/account-reconcile",
+  "${workspaceFolder}/odoo/custom/src/bank-payment",
+  # ... (all 32 src/ subdirectories, excluding odoo/)
+  "${workspaceFolder}/odoo/custom/src/web",
 ]
 ```
+
+**Why explicit `src/` subdirs instead of symlink farm:**
+- Avoids deduplication ambiguity with `odoo/auto/addons/` symlink farm (see spec.md — Addon Path Collision)
+- Explicit paths are clearer and deterministic
+- Can be auto-generated from `repos.yaml` if needed
 
 **Verification performed on:** `/home/roly/projects/binhex/OCA/oca-17/` (Doodba project)
 
@@ -52,6 +60,10 @@ addons_paths = [
 - ✅ Binary on PATH: `odoo_ls_server` must be installed to `~/.local/bin/` or another PATH directory
 - ✅ Typeshed stubs: The `~/.local/share/odoo-ls/typeshed/` directory must exist (downloaded from official releases)
 - ✅ Project structure: Requires a Doodba or Odoo project with `odoo/custom/src/` or similar addon layout
+- ✅ **Config file locations:**
+  - `opencode.json` must be at **Git project root**, NOT inside `.opencode/` (per OpenCode docs: "Add opencode.json in your project root")
+  - `odools.toml` must be at **Git project root** (odoo_ls_server walks upward from workspace folder)
+  - `.opencode/` directory is for agents/commands/plugins only — not for `opencode.json`
 
 ---
 
@@ -179,10 +191,11 @@ odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"  # Expanded at LSP init
 When an agent asks about OpenCode + Odoo LSP setup:
 
 **✅ Recommend:**
-- Two-file setup: `opencode.json` + `odools.toml` (pure config)
+- Two-file setup: `opencode.json` + `odools.toml` (both at project root)
 - Simple `opencode.json` with no hardcoded paths or initialization options
-- Symlink farm (`odoo/auto/addons`) for addon discovery
+- Explicit `odoo/custom/src/<repo>` paths in `addons_paths` (not symlink farm, to avoid deduplication ambiguity)
 - `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` flag for agents using the lsp tool
+- Use `opencode debug lsp diagnostics <file>` command to test LSP without requiring agent execution
 
 **❌ Warn against:**
 - Hardcoded absolute paths in `opencode.json` (breaks portability)
@@ -193,3 +206,31 @@ When an agent asks about OpenCode + Odoo LSP setup:
 **❓ Acknowledge as open:**
 - Type resolution without host Python dependencies (may be limited in Doodba)
 - JavaScript/OWL component support (untested)
+
+---
+
+## Debugging Tools
+
+### OpenCode LSP Debug Commands (v1.14.20)
+
+The `opencode debug lsp` subcommand provides testing utilities (undocumented in public docs):
+
+```bash
+opencode debug lsp diagnostics <file>      # Get diagnostics for a file
+opencode debug lsp symbols <query>         # Search workspace symbols (requires file context)
+opencode debug lsp document-symbols <uri>  # Get symbols from a document (requires file context)
+```
+
+**Important:** Both `symbols` and `document-symbols` require a `.py` file to be in context first (they need to know which workspace folder to use). The LSP server only starts when files matching configured extensions (`.py`, `.xml`) are opened.
+
+**Example workflow:**
+```bash
+cd /path/to/oca-17
+opencode debug lsp diagnostics odoo/custom/src/private/some_module/models/some_model.py
+```
+
+**Note on `OPENCODE_EXPERIMENTAL_LSP_TOOL`:**
+- This is a **client-side flag** that enables the `lsp` tool for agents
+- Must be set in the shell environment: `OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run "..."`
+- It does NOT enable the debug commands — those work without the flag
+- Passing it via `env` in the LSP block in opencode.json would inject it into the server process where it is ignored
