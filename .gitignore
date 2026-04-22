@@ -1,0 +1,18 @@
+# Local gitignore for opencode-odoo-ls project
+# Overrides the global gitignore to allow OpenCode-specific files in this repo
+
+# ALLOW (override global excludes):
+# These files are intentional and should be tracked in this project
+!AGENTS.md
+!opencode.json
+
+# STILL IGNORE (keep from global):
+# These are project-local configs that shouldn't be tracked
+opencode-session.json
+.opencode/
+
+# ALLOW (OpenCode documentation configs that are part of this project):
+!docs/VERIFIED_FACTS.md
+!docs/spec.md
+!CLEANUP_LOG.md
+!SESSION_2_SUMMARY.md
