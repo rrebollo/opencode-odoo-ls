@@ -574,74 +574,15 @@ This configuration **accepts the known overlap** and relies on the LSP server's 
 - Real-world testing has not revealed issues from the overlap
 - Removing `odoo_path` introduces uncertainty about auto-detection behavior
 
-### Alternative Strategy: Explicit Addon Paths from addons.yaml
+### Alternative Strategies
 
-**Problem with current approach:** `auto/addons` is a symlink farm generated at container startup from `addons.yaml`. While it captures all active addons (both core and OCA), it does so via symlinks that resolve to the same physical paths that `odoo_path` scans directly. This creates the documented overlap.
+If empirical testing reveals performance issues or symbol duplication problems:
 
-**Root cause:** In Doodba projects, `addons.yaml` explicitly lists which repos to activate. Each repo in `addons.yaml` maps to a directory under `odoo/custom/src/`. When `odoo/` (Odoo CE core) is listed in repos (via `repos.yaml` → `gitaggregate`), its addons appear in `auto/addons/` as symlinks. But `odoo_path` also scans `odoo/custom/src/odoo/addons/` directly.
+**Option A:** Omit `odoo_path` and rely on auto-detection (simpler, no overlap)
 
-**Solution:** Build `addons_paths` array **directly from `addons.yaml`**, excluding the `odoo/` directory (covered by `odoo_path`) and including the implicit `private/` directory:
+**Option B:** Use explicit repo collections instead of the symlink farm (more control, requires list maintenance)
 
-```toml
-[Odoo]
-odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-
-[odoo]
-addons_paths = [
-  # OCA/external repos from addons.yaml (only active, non-commented entries)
-  "${workspaceFolder}/odoo/custom/src/e-learning",
-  "${workspaceFolder}/odoo/custom/src/field-service",
-  "${workspaceFolder}/odoo/custom/src/hr",
-  "${workspaceFolder}/odoo/custom/src/hr-attendance",
-  "${workspaceFolder}/odoo/custom/src/hr-holidays",
-  "${workspaceFolder}/odoo/custom/src/payroll",
-  "${workspaceFolder}/odoo/custom/src/project",
-  "${workspaceFolder}/odoo/custom/src/queue",
-  "${workspaceFolder}/odoo/custom/src/sale-workflow",
-  "${workspaceFolder}/odoo/custom/src/server-env",
-  "${workspaceFolder}/odoo/custom/src/server-tools",
-  "${workspaceFolder}/odoo/custom/src/spreadsheet",
-  "${workspaceFolder}/odoo/custom/src/stock-logistics-transport",
-  "${workspaceFolder}/odoo/custom/src/storage",
-  "${workspaceFolder}/odoo/custom/src/timesheet",
-  "${workspaceFolder}/odoo/custom/src/web",
-  # Implicit private directory — never in addons.yaml but always included
-  "${workspaceFolder}/odoo/custom/src/private",
-]
-```
-
-**Coverage:**
-- `odoo_path` → Odoo core (`base`, `sale`, `account`, `mail`, `web_core`, etc.)
-- `addons_paths` → OCA repos from `addons.yaml` (active entries only) + `private/`
-- **Zero overlap** — `odoo/` directory is **never** in `addons_paths`
-
-**Trade-off:** This config is more explicit and verbose than `auto/addons`, but:
-- Eliminates the overlap entirely (cleaner semantics)
-- Gives agents/users full visibility into what's being indexed
-- Matches how Doodba's `addons.yaml` explicitly declares intent
-- Requires parsing `addons.yaml` and maintaining sync — can be scripted or automated via plugin
-
-### Phase 4 Plan: Verify and Document Explicit Addon Paths Strategy
-
-**Goal:** Empirically test the explicit addon paths approach from `addons.yaml` and decide whether to recommend it in AGENTS.md (replacing `auto/addons`) or keep it as an advanced alternative.
-
-**Test environment:** Doodba project at `/home/roly/projects/binhex/OCA/oca-17/`
-
-**Steps:**
-1. Write `odools.toml` with explicit paths derived from active `addons.yaml` entries + `private/`
-2. Start OpenCode LSP with this config
-3. Query core symbols (e.g. `SaleOrder`) — must resolve via `odoo_path`
-4. Query OCA symbols (e.g. `HrAttendanceOvertime` from `hr-attendance`) — must resolve via `addons_paths`
-5. Query private symbols (e.g. `ReportPrintedFlag` from `private/`) — must resolve via `addons_paths`
-6. Review LSP server logs to confirm:
-   - All expected addon paths are indexed
-   - No duplicate indexing or overlap warnings
-   - No errors from scanning empty or missing directories
-7. Document findings and decide:
-   - If successful: update AGENTS.md Step 4 to recommend explicit paths; document `auto/addons` as deprecated/alternative
-   - If issues found: document failures in this section and keep current `auto/addons` approach as default
-
-**Expected outcome:** Clear documentation of whether explicit addon paths is the recommended strategy for all Doodba projects, or if it's an advanced option for projects wanting zero overlap.
+See `docs/superpowers/plans/` for Phase 4 plan on testing explicit addon paths strategy.
 
 ---
 
