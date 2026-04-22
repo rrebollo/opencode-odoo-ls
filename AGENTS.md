@@ -75,14 +75,13 @@ Verify: `odoo_ls_server --help` prints usage without errors.
 ## Step 4: Create odools.toml at project root
 
 ```toml
-[Odoo]
-odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-
 [odoo]
 addons_paths = [
   "${workspaceFolder}/odoo/auto/addons",
 ]
 ```
+
+**Note on `odoo_path`:** Omitted intentionally. The `odoo_path` setting points to Odoo core (built-in addons like `base`, `web`, `sale`), which is available at `odoo/custom/src/odoo/addons/`. Because `odoo/auto/addons/` is a symlink farm containing **all** addons (both core and community), setting both `odoo_path` and `addons_paths` causes duplicate indexing. The LSP server's anti-duplication algorithm should handle this, but to avoid potential edge cases, we rely on `odoo_path` auto-detection. If you need explicit control, see `docs/spec.md` section "Addon Path Collision" for alternatives.
 
 `${workspaceFolder}` is resolved by the LSP server at startup, not by OpenCode.
 

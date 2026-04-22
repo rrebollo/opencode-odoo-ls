@@ -476,6 +476,95 @@ When resuming:
 
 ---
 
+## Addon Path Collision: auto/addons vs. odoo_path
+
+**Investigation Date:** 2026-04-22
+
+### The Overlap
+
+In Doodba projects, `odoo/auto/addons/` is a symlink farm (936 symlinks pointing to `odoo/custom/src/odoo/addons/*`).
+
+When `odools.toml` configures both:
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
+[odoo]
+addons_paths = ["${workspaceFolder}/odoo/auto/addons"]
+```
+
+The LSP server will index the same physical addon directories **twice**:
+1. **Via `odoo_path` + `/addons`:** Scans `odoo/custom/src/odoo/addons/` (where `sale`, `account`, `mail`, etc. live)
+2. **Via `addons_paths`:** Scans symlink farm `odoo/auto/addons/` which resolves to the same inodes
+
+### Anti-Duplication Algorithm
+
+The `odoo_ls_server` changelog (v1.2.0) mentions: **"Fix the anti-duplication algorithm to prevent loading some symbols."**
+
+And v1.0.0 specifically fixed: **"Prevent creation of duplicated addons entrypoint if the directory of an addon path is in PYTHON_PATH"**
+
+This indicates the server **has deduplication logic**, but:
+- It has had bugs requiring fixes (1.2.0, 1.0.0)
+- Semantics are undocumented — unclear if deduplication is inode-based or path-based
+- No explicit guarantee that symlink aliasing is detected and deduplicated
+
+### Workaround (Option A: Preferred)
+
+Use **only `addons_paths`** and omit `odoo_path`:
+
+```toml
+[Odoo]
+# Omit odoo_path — LSP auto-detects from workspace
+
+[odoo]
+addons_paths = [
+  "${workspaceFolder}/odoo/auto/addons",
+]
+```
+
+**Pros:**
+- No overlap — single scan of the symlink farm covers all addons
+- Simpler config
+
+**Cons:**
+- LSP's auto-detection of `odoo_path` may be less precise
+- Requires testing that core modules are still accessible
+
+### Workaround (Option B: Explicit Repo Collections)
+
+List each repo-collection directory explicitly (bypassing the symlink farm):
+
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
+[odoo]
+addons_paths = [
+  "${workspaceFolder}/odoo/custom/src/account-reconcile",
+  "${workspaceFolder}/odoo/custom/src/bank-payment",
+  # ... one per repo, list from repos.yaml
+]
+```
+
+**Pros:**
+- No symlink aliasing — explicit, clearer intent
+- Better diagnostic scoping per repo
+
+**Cons:**
+- Requires maintaining the list (can be auto-generated from `repos.yaml`)
+- Loses the convenience of the pre-built symlink farm
+
+### Current Recommendation
+
+**Use Option A** (omit `odoo_path`) until empirical testing with a real agent confirms:
+1. Auto-detected `odoo_path` provides sufficient Odoo core module access
+2. No symbols are missing from base, web, or other core addons
+3. Type resolution works acceptably
+
+If issues arise, fall back to Option B (explicit repo collections).
+
+---
+
 ## Phase 3 PoC Results
 
 **Date:** 2026-04-22
