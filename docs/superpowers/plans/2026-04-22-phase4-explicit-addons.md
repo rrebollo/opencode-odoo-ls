@@ -240,10 +240,46 @@ Create a brief summary noting:
 
 ---
 
+## Phase 4 Results (Executed 2026-04-22)
+
+### Critical Blocker: OpenCode LSP Config Discovery
+
+**Finding:** `odools.toml` is NOT discovered by `odoo_ls_server` when running under OpenCode's LSP client.
+
+**Root cause:** 
+- `odoo_ls_server` expects `odools.toml` in the workspace root directory
+- OpenCode's LSP integration does NOT set the working directory for spawned LSP servers
+- The `--config-path` flag in `opencode.json` command arrays is ignored or not passed through
+- Result: LSP server initializes with empty config (`odoo_path: None, addons_paths: {}`), no addons indexed
+
+**Evidence:**
+- Created `odools.toml` with 17 explicit addon paths at `/home/roly/projects/binhex/OCA/oca-17/`
+- Updated `opencode.json` to pass `["odoo_ls_server", "--config-path", "/absolute/path/to/odools.toml", "--stdlib", "/absolute/path/to/typeshed"]`
+- LSP server still initialized with empty config (logs line: `Full Config: ConfigEntry { name: "default", odoo_path: None, addons_paths: {}, ... }`)
+- Symbol queries returned no results; agent fell back to grep
+
+**Impact on explicit addon paths strategy:**
+- Cannot verify the explicit addon paths approach works because the LSP never reads the config
+- Both `auto/addons` approach and explicit addon paths approach are blocked by this limitation
+- Root cause is in OpenCode's LSP infrastructure, not in the addon paths strategy
+
+### Workarounds Investigated
+
+1. **Absolute path in `--config-path`:** Attempted, not working
+2. **Relative paths:** Cannot use (OpenCode doesn't expand variables in command arrays)
+3. **Wrapper script:** Not attempted (would require creating script on host, then passing to OpenCode)
+4. **Different config path:** LSP auto-discovery looks for `odools.toml` in workspace folder, which OpenCode doesn't set
+
+### Decision
+
+**Revert to `auto/addons` approach in AGENTS.md.** The explicit addon paths strategy cannot be tested due to the OpenCode LSP config discovery limitation. The current simple `auto/addons` approach (as documented in AGENTS.md) is the only viable path for now.
+
+**Document the limitation:** Add note in AGENTS.md Gotchas about OpenCode's LSP working directory issue, so future agents understand why more explicit configuration is not possible.
+
 ## Notes for Future Sessions
 
 When resuming:
-1. Check `git log` to see if Phase 4 tests were already executed
-2. If yes: review test results in `docs/spec.md` and follow up with AGENTS.md updates if needed
-3. If no: execute Task 1–6 above in order
-4. See AGENTS.md for current configuration and expected setup
+1. Phase 4 was executed 2026-04-22 and identified a critical OpenCode limitation
+2. The explicit addon paths strategy is theoretically sound but cannot be tested with current OpenCode LSP integration
+3. AGENTS.md remains unchanged (keeps `auto/addons` approach)
+4. Blocker documented in spec.md for future versions of OpenCode that may fix the working directory issue

@@ -576,13 +576,40 @@ This configuration **accepts the known overlap** and relies on the LSP server's 
 
 ### Alternative Strategies
 
+**Note: Phase 4 investigation (2026-04-22) identified a critical blocker** — see below.
+
 If empirical testing reveals performance issues or symbol duplication problems:
 
 **Option A:** Omit `odoo_path` and rely on auto-detection (simpler, no overlap)
 
 **Option B:** Use explicit repo collections instead of the symlink farm (more control, requires list maintenance)
 
-See `docs/superpowers/plans/` for Phase 4 plan on testing explicit addon paths strategy.
+### OpenCode LSP Working Directory Limitation (BLOCKER for Phase 4)
+
+**Finding:** `odoo_ls_server` cannot discover `odools.toml` when launched via OpenCode's LSP integration.
+
+**Root cause:** 
+- `odoo_ls_server` expects `odools.toml` in the LSP server's working directory (workspace root)
+- OpenCode's LSP infrastructure **does not set the working directory** for spawned LSP servers
+- The `--config-path` flag in `opencode.json` `command` arrays appears to be ignored or not passed through correctly
+- Result: LSP server initializes with empty config (`odoo_path: None, addons_paths: {}`), no addons indexed
+
+**Evidence from Phase 4 test:**
+- Created explicit `odools.toml` with 17 addon paths at project root
+- Updated `opencode.json` to pass `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml", ...]`
+- LSP server still logged: `Full Config: ConfigEntry { odoo_path: None, addons_paths: {} }`
+- Symbol queries returned no results
+
+**Impact:**
+- Explicit addon paths strategy cannot be tested (config never reaches LSP server)
+- Current `auto/addons` approach is the only working configuration
+- Both strategies are affected equally by this OpenCode limitation
+
+**Workaround for future versions:**
+- Requires OpenCode enhancement to set working directory for LSP servers, OR
+- Requires `odoo_ls_server` to accept config via environment variables or alternative discovery mechanism
+
+See `docs/superpowers/plans/2026-04-22-phase4-explicit-addons.md` for detailed test results and decision logic.
 
 ---
 

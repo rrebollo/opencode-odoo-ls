@@ -101,6 +101,8 @@ Expected: result includes a file path under `odoo/custom/src/` or `odoo/auto/add
 
 ## Gotchas
 
+**OpenCode LSP servers cannot discover `odools.toml` automatically** — OpenCode's LSP integration does not set the working directory for spawned servers. As a result, `odoo_ls_server` cannot auto-discover `odools.toml` in the project root. Attempts to pass `--config-path` via the `command` array in `opencode.json` are not effective. This is a limitation of OpenCode's LSP infrastructure, not the LSP server itself. See `docs/spec.md` section "OpenCode LSP Working Directory Limitation" for details.
+
 **OpenCode `command` arrays do NOT expand variables** — Agents configuring LSP servers via the `command` field in `opencode.json` cannot use `${workspaceFolder}`, `${userHome}`, or other variables. These must be absolute paths or binaries on `PATH`. Variable expansion only works in certain OpenCode config contexts (like `instructions` paths), but not in `lsp.*.command` arrays. Document this limitation when authoring config examples for agents.
 
 **`odoo_ls_server` ≠ `odoo-lsp`** — The community fork (github.com/Desdaemon/odoo-lsp) has a different binary name. The official server (github.com/odoo/odoo-ls) is `odoo_ls_server`. Don't confuse them.
