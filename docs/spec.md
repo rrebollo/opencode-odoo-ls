@@ -192,36 +192,9 @@ In project-local `opencode.json`, disable pyright and register odoo-ls. This ens
 
 ## odools.toml Configuration Options
 
-### Option A: Symlink Farm (Simplest)
+### RECOMMENDED: Option B — Explicit Repo Collections
 
-Leverages the pre-built symlink farm:
-
-```toml
-[Odoo]
-# odoo_path points to the Odoo CE source tree (cloned under custom/src/)
-odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-
-# Single path: use the generated symlink farm (all 936 addons in one flat dir)
-addons_paths = [
-  "${workspaceFolder}/odoo/auto/addons",
-]
-
-[python]
-# Host Python has no Odoo deps; runtime is in Docker
-# Omit or set to system Python; type resolution may degrade gracefully
-```
-
-**Pros:**
-- Simpler (1 path instead of 30+)
-- Auto-generated, no manual list maintenance
-- All addons visible and indexed
-
-**Cons:**
-- LSP may treat 936 symlinks as one flattened namespace
-
-### Option B: Explicit Repo Collections (More Granular)
-
-If you prefer to list repo collections explicitly (finer control, diagnostic filtering):
+List repo collections explicitly to avoid symlink deduplication ambiguity:
 
 ```toml
 [Odoo]
@@ -233,7 +206,7 @@ addons_paths = [
   "${workspaceFolder}/odoo/custom/src/account-reconcile",
   "${workspaceFolder}/odoo/custom/src/bank-payment",
   "${workspaceFolder}/odoo/custom/src/connector",
-  # ... (one per repo group)
+  # ... (one per repo group, typically 30+ for Doodba)
   "$autoDetectAddons",  # re-enable auto-detection for any addons at workspace root
 ]
 
@@ -243,12 +216,34 @@ addons_paths = [
 ```
 
 **Pros:**
-- More control
+- Clear, deterministic (avoids symlink aliasing)
 - Maintains repo grouping structure
-- Better for diagnostic scoping
+- LSP anti-deduplication algorithm is reliable and documented for explicit paths
+- Can be auto-generated from `repos.yaml`
 
 **Cons:**
-- Requires listing each collection (but can be auto-generated from `repos.yaml`)
+- Requires listing each collection (but this is typically just 30 entries for Doodba, which we provide in AGENTS.md)
+
+---
+
+### NOT RECOMMENDED: Option A — Symlink Farm
+
+**Previously tested but NOT recommended:**
+
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+
+addons_paths = [
+  "${workspaceFolder}/odoo/auto/addons",
+]
+```
+
+**Why NOT used:**
+- The `odoo/auto/addons/` symlink farm resolves to the same inodes as `odoo_path/addons/`
+- The LSP anti-deduplication algorithm behavior with symlink aliasing is **undocumented**
+- Real-world testing found the overlap creates unpredictable deduplication bugs
+- **Use explicit `src/` paths instead**
 
 ---
 

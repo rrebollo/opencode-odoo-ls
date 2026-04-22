@@ -80,9 +80,50 @@ odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
 
 [odoo]
 addons_paths = [
-  "${workspaceFolder}/odoo/auto/addons",
+  "${workspaceFolder}/odoo/custom/src/account-reconcile",
+  "${workspaceFolder}/odoo/custom/src/bank-payment",
+  "${workspaceFolder}/odoo/custom/src/bank-statement-import",
+  "${workspaceFolder}/odoo/custom/src/binhex-calendar",
+  "${workspaceFolder}/odoo/custom/src/binhex-server-backend",
+  "${workspaceFolder}/odoo/custom/src/canal",
+  "${workspaceFolder}/odoo/custom/src/connector",
+  "${workspaceFolder}/odoo/custom/src/connector-interfaces",
+  "${workspaceFolder}/odoo/custom/src/crm",
+  "${workspaceFolder}/odoo/custom/src/e-learning",
+  "${workspaceFolder}/odoo/custom/src/event",
+  "${workspaceFolder}/odoo/custom/src/field-service",
+  "${workspaceFolder}/odoo/custom/src/hr",
+  "${workspaceFolder}/odoo/custom/src/hr-attendance",
+  "${workspaceFolder}/odoo/custom/src/hr-holidays",
+  "${workspaceFolder}/odoo/custom/src/partner-contact",
+  "${workspaceFolder}/odoo/custom/src/payroll",
+  "${workspaceFolder}/odoo/custom/src/private",
+  "${workspaceFolder}/odoo/custom/src/project",
+  "${workspaceFolder}/odoo/custom/src/queue",
+  "${workspaceFolder}/odoo/custom/src/reporting-engine",
+  "${workspaceFolder}/odoo/custom/src/sale-workflow",
+  "${workspaceFolder}/odoo/custom/src/server-backend",
+  "${workspaceFolder}/odoo/custom/src/server-env",
+  "${workspaceFolder}/odoo/custom/src/server-tools",
+  "${workspaceFolder}/odoo/custom/src/server-ux",
+  "${workspaceFolder}/odoo/custom/src/spreadsheet",
+  "${workspaceFolder}/odoo/custom/src/stock-logistics-transport",
+  "${workspaceFolder}/odoo/custom/src/stock-logistics-workflow",
+  "${workspaceFolder}/odoo/custom/src/storage",
+  "${workspaceFolder}/odoo/custom/src/timesheet",
+  "${workspaceFolder}/odoo/custom/src/web",
 ]
 ```
+
+**Why explicit `src/` paths?**
+- Avoids deduplication ambiguity with the `odoo/auto/addons/` symlink farm (which resolves to the same inodes as `odoo_path/addons/`)
+- The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented; explicit paths eliminate this risk
+- Provides clear, deterministic addon discovery
+
+**For projects with different repo layouts:**
+- Extract the `src/` subdirectory names from `repos.yaml` or `addons.yaml`
+- Replace the list above with your project's actual repo collection directories
+- Keep `odoo` (the core) in `odoo_path`, not in `addons_paths`
 
 `${workspaceFolder}` is resolved by the LSP server at startup, not by OpenCode.
 
@@ -109,7 +150,7 @@ Expected: result includes a file path under `odoo/custom/src/` or `odoo/auto/add
 
 **Disable pyright or get noise** — `odoo_ls_server` is a full Python LSP with its own type resolution. Running alongside OpenCode's built-in pyright gives duplicate completions and conflicting diagnostics. `"pyright": { "disabled": true }` applies only to this project's `opencode.json` — other projects are unaffected.
 
-**`odoo/auto/addons/` is on the host, not Docker-only** — After gitaggregate, this directory contains symlinks that resolve correctly on the host filesystem. Using it as `addons_paths` is correct and intentional.
+**Symlink farm deduplication issue** — The `odoo/auto/addons/` symlink farm resolves to the same inodes as `odoo_path/addons/`. The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented. To avoid unpredictable deduplication, use explicit `odoo/custom/src/<repo>` paths in `addons_paths` instead of the symlink farm.
 
 **Setting `addons_paths` disables auto-detection** — Any value (including `[]`) disables Odoo LSP's auto-detection. If you need auto-detection alongside explicit paths, add the literal string `"$autoDetectAddons"` to the array.
 
