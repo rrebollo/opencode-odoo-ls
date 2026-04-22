@@ -154,12 +154,27 @@ addons_paths = [
 
 ## Step 5: Verify
 
+### Test Python File Handling (LSP for `.py`)
+
 ```bash
 OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
-  "Use the lsp tool with workspaceSymbol to search for any class name you know exists in this project. Report the raw result including file path and line number."
+  "Read an addon model file (e.g., odoo/custom/src/account/models/account_move.py). \
+   Use the lsp tool with workspaceSymbol to search for 'AccountMove' (or any model you know exists). \
+   Report the raw result including file path and line number."
 ```
 
-Expected: result includes a file path under your addon directories. If the lsp tool reports "no LSP server available": restart OpenCode so it picks up the new `opencode.json`.
+Expected: result includes a file path to a Python model file under your addon directories. LSP should return the class definition location.
+
+### Test XML File Handling (LSP for `.xml`)
+
+```bash
+OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
+  "Read an addon view file (e.g., odoo/custom/src/account/views/account_move_views.xml). \
+   Report what LSP diagnostics or symbols you can find in the XML file using the lsp tool. \
+   Also check: are there any XML validation errors that should be reported?"
+```
+
+Expected: LSP should provide diagnostics, field completions, or symbol information for the Odoo view definition. No errors should be reported for valid Odoo XML view syntax.
 
 ### Debugging if verification fails
 
@@ -170,18 +185,23 @@ If LSP is not working:
    ls -l opencode.json odools.toml
    ```
 
-2. **Test LSP directly (without agent):**
+2. **Test LSP directly (without agent) — Python:**
    ```bash
-   opencode debug lsp diagnostics <any-py-file-in-project>
+   opencode debug lsp diagnostics odoo/custom/src/<addon>/models/<model>.py
    ```
 
-3. **Check LSP logs:**
+3. **Test LSP directly (without agent) — XML:**
+   ```bash
+   opencode debug lsp diagnostics odoo/custom/src/<addon>/views/<view>.xml
+   ```
+
+4. **Check LSP logs:**
    ```bash
    opencode debug paths
    # Then check the log directory shown
    ```
 
-4. **Verify addon paths exist:**
+5. **Verify addon paths exist:**
    - Check each path in `addons_paths` exists on disk
    - Confirm it contains addon directories (not just empty folders)
 
@@ -194,6 +214,8 @@ If LSP is not working:
 **`odoo_ls_server` ≠ `odoo-lsp`** — The community fork (github.com/Desdaemon/odoo-lsp) has a different binary name. The official server (github.com/odoo/odoo-ls) is `odoo_ls_server`. Don't confuse them.
 
 **Disable pyright or get noise** — `odoo_ls_server` is a full Python LSP with its own type resolution. Running alongside OpenCode's built-in pyright gives duplicate completions and conflicting diagnostics. `"pyright": { "disabled": true }` applies only to this project's `opencode.json` — other projects are unaffected.
+
+**No XML LSP conflict** — OpenCode has no built-in XML language server, so registering `odoo_ls_server` with `"extensions": [".py", ".xml"]` has no conflicts. The only active LSP for `.xml` files in this project will be `odoo_ls_server`. No additional `disabled` entries are needed for XML support.
 
 **Symlink farm deduplication issue** — The `odoo/auto/addons/` symlink farm resolves to the same inodes as `odoo_path/addons/`. The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented. To avoid unpredictable deduplication, use explicit `odoo/custom/src/<repo>` paths in `addons_paths` instead of the symlink farm.
 
