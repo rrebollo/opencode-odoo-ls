@@ -198,9 +198,7 @@ Use the Python version detected in Prerequisites:
 
 ```bash
 source ~/.venv/odoo<ODOO_VERSION>/bin/activate
-
-# Install setuptools first (required by Odoo's pkg_resources)
-pip install --upgrade pip setuptools
+pip install --upgrade pip
 ```
 
 ### Install Odoo from Project Source
@@ -326,27 +324,40 @@ Choose **one** approach for populating the `addons_paths` array:
 List each addon repository directory explicitly. This avoids symlink deduplication ambiguity.
 
 **Steps:**
-1. List your addon repositories:
+1. Check your Doodba `addons.yaml` for the canonical addon paths:
+   ```bash
+   cat odoo/custom/src/addons.yaml
+   # Lists the main addon repositories (excludes private/ which is auto-detected)
+   ```
+
+2. List all directories under `odoo/custom/src/`:
    ```bash
    ls -d odoo/custom/src/*/
    # Output example:
    # odoo/custom/src/account-reconcile/
    # odoo/custom/src/bank-payment/
    # odoo/custom/src/custom-module/
-   # odoo/custom/src/odoo/  (skip this one)
+   # odoo/custom/src/odoo/  (skip this one - it's the core Odoo package)
+   # odoo/custom/src/private/  (include if it exists and has modules)
    # odoo/custom/src/web/
    ```
 
-2. Add all paths EXCEPT `odoo/custom/src/odoo/` to `addons_paths`:
+3. Add all paths EXCEPT `odoo/custom/src/odoo/` to `addons_paths`:
    ```toml
    addons_paths = [
      "${workspaceFolder}/odoo/custom/src/account-reconcile",
      "${workspaceFolder}/odoo/custom/src/bank-payment",
      "${workspaceFolder}/odoo/custom/src/custom-module",
+     "${workspaceFolder}/odoo/custom/src/private",  # Include if it has Odoo modules
      "${workspaceFolder}/odoo/custom/src/web",
      # ... (continue for all addon repositories)
    ]
    ```
+
+**Important notes:**
+- Include `private/` if it contains Odoo modules (it won't be listed in `addons.yaml`)
+- Do NOT include `odoo/custom/src/odoo/` — that's configured separately via `odoo_path`
+- The LSP auto-detects modules inside these directories and their subdirectories
 
 **Why explicit paths?**
 - Avoids deduplication ambiguity with `odoo/auto/addons/` symlink farm
@@ -482,232 +493,6 @@ OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
 ```
 
 Expected: The agent returns a file path to a Python model definition in your addon directories.
-
----
-
-## Troubleshooting (Consolidated)
-
-### Configuration Structure: [[config]] vs [Odoo]/[odoo]
-
-**WRONG** (will be silently ignored by server):
-```toml
-[Odoo]
-odoo_path = "..."
-
-[odoo]
-addons_paths = [...]
-```
-
-**CORRECT** (per https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files):
-```toml
-[[config]]
-name = "default"
-odoo_path = "..."
-addons_paths = [...]
-```
-
-The server requires the array-of-tables syntax `[[config]]`. If your `odools.toml` uses bare `[Odoo]` sections, the server will ignore the file and attempt unreliable auto-detection.
-
-### Profile Selection: name ↔ selectedProfile
-
-Both files must agree on the profile name:
-
-**In `opencode.json`:**
-```json
-{
-  "lsp": {
-    "odoo-ls": {
-      "initialization": {
-        "selectedProfile": "default"
-      }
-    }
-  }
-}
-```
-
-**In `odools.toml`:**
-```toml
-[[config]]
-name = "default"  # Must match selectedProfile above
-...
-```
-
-If these don't match, the server won't load the correct profile and will use unreliable auto-detection.
-
-### stdlib Path Issues: Trailing Slash Required
-
-The `stdlib` key requires a **trailing `/`** for directory paths:
-
-**CORRECT:**
-```toml
-stdlib = "/home/user/.local/share/odoo-ls/typeshed/stdlib/"
-```
-
-**WRONG (will fail):**
-```toml
-stdlib = "/home/user/.local/share/odoo-ls/typeshed/stdlib"
-```
-
-Without the trailing slash, the server fails to find `builtins.pyi` and cannot resolve types. See https://github.com/odoo/odoo-ls/issues/425#issuecomment-3311402591
-
-### Python and Odoo Import Errors
-
-If diagnostics show `ModuleNotFound: No module named 'odoo'`:
-
-1. **Verify your Python has Odoo:**
-   ```bash
-   /home/<username>/.venv/odoo<ODOO_VERSION>/bin/python3 -c "import odoo; print(odoo.__file__)"
-   # Should print the Odoo path, not an error
-   ```
-
-2. **If it fails, reinstall Odoo:**
-   ```bash
-   source ~/.venv/odoo<ODOO_VERSION>/bin/activate
-   pip install --upgrade pip setuptools
-   pip install -e /path/to/odoo/custom/src/odoo
-   # Verify again
-   python -c "import odoo; print(odoo.__file__)"
-   deactivate
-   ```
-
-3. **Ensure `python_path` in `odools.toml` points to this venv:**
-   ```toml
-   python_path = "/home/<username>/.venv/odoo<ODOO_VERSION>/bin/python3"
-   ```
-
-### Parse Mode vs Server Mode
-
-Parse mode (`--parse` flag) does NOT read `odools.toml`:
-
-| Aspect | Parse Mode | LSP Server Mode |
-|--------|-----------|-----------------|
-| Config file | Ignored | Reads `odools.toml` from project root |
-| Configuration | CLI flags only | CLI flags OR config file |
-| Persistence | Exits after diagnostics | Stays running |
-| Use case | Quick testing, CI/CD | Interactive editor |
-
-When testing with `--parse`, always pass all flags:
-- `-c` (odoo path)
-- `-a` (addon paths, one per flag)
-- `--python` (Python executable)
-- `--stdlib` (typeshed path with trailing `/`)
-
-### 3-Second Timeout in OpenCode
-
-Large projects (30+ addon repos) may exceed OpenCode's 3-second timeout for initial diagnostics after opening a file. This is a platform limitation — not all diagnostics will be shown after the timeout.
-
-**Check if this is happening:**
-```bash
-opencode debug paths
-# Get logs directory, then:
-grep "timeout" <logs_directory>/opencode-lsp-*.log | tail -5
-```
-
-**Workaround:** The `lsp` tool (workspaceSymbol, goToDefinition) has its own 30-second timeout and may work even if initial diagnostics timeout.
-
-### XML Support Status
-
-XML support in `odoo_ls_server` is in alpha stage. Known issues:
-
-- View `<field>` validation may crash if the model isn't indexed yet
-- `name=` attribute validation may produce false positives
-- Go-to-definition from view to model works inconsistently
-
-**Workaround:** Wait for indexing to complete (check logs for `loadingStatusUpdate: "stop"`), then reload the file in OpenCode.
-
-### Common Errors and Solutions
-
-#### Error: "Unable to find builtins.pyi"
-
-**Cause:** Usually `stdlib` path is missing or incorrect.
-
-**Fix:**
-1. Check `stdlib` path in `odools.toml`:
-   ```bash
-   ls -la /home/<username>/.local/share/odoo-ls/typeshed/stdlib/ | head -5
-   # Should show .pyi files like builtins.pyi
-   ```
-
-2. Ensure the path has a trailing `/`:
-   ```toml
-   stdlib = "/home/user/.local/share/odoo-ls/typeshed/stdlib/"
-   ```
-
-#### Error: "odoo_ls_server: command not found"
-
-**Cause:** Binary is not on PATH.
-
-**Fix:**
-```bash
-which odoo_ls_server
-# If empty:
-export PATH="$HOME/.local/bin:$PATH"
-# Then verify:
-odoo_ls_server --help
-```
-
-#### Error: "ModuleNotFound: No module named 'lxml'" or similar
-
-**Cause:** Host Python lacks dependencies available only in Docker.
-
-**Fix:** Add to `odools.toml`:
-```toml
-diag_missing_imports = "only_odoo"
-```
-
-This suppresses non-Odoo import errors.
-
-#### LSP Server Crashes on Startup
-
-1. **Check logs:**
-   ```bash
-   opencode debug paths
-   tail -100 <logs_directory>/opencode-lsp-*.log
-   ```
-
-2. **Verify `odools.toml` syntax:**
-   ```bash
-   cat odools.toml | head -20
-   # Check for: mismatched quotes, missing brackets, trailing commas
-   ```
-
-3. **Test binary directly:**
-   ```bash
-   odoo_ls_server --help
-   # Should not error
-   ```
-
-4. **Test in parse mode with minimal flags:**
-   ```bash
-   odoo_ls_server --parse \
-     -c odoo/custom/src/odoo \
-     -a odoo/custom/src/web \
-     -o /tmp/test.json \
-     --python /path/to/python3 \
-     --stdlib /path/to/typeshed/stdlib/
-   ```
-
-### Verify Binary Installation
-
-```bash
-# Check all required files exist
-ls -l ~/.local/bin/odoo_ls_server
-ls -la ~/.local/share/odoo-ls/typeshed/stdlib/ | head -5
-
-# Test binary
-odoo_ls_server --help | head -20
-```
-
-### Verify Config File Locations
-
-```bash
-# Both must be at Git project root
-ls -l opencode.json odools.toml
-
-# NOT in .opencode/ directory
-ls -la .opencode/ 2>/dev/null | grep -E "opencode.json|odools.toml"
-# Should be empty or not exist
-```
 
 ---
 
