@@ -53,23 +53,31 @@ Document this value as `<ODOO_VERSION>` for use in subsequent steps.
 
 Because `odoo_ls_server` runs on your host (not in Docker), it must use a Python interpreter that matches the container's Python version exactly. Type resolution depends on version-specific bytecode and stdlib paths.
 
-**For Doodba projects using docker-compose:**
+**For Doodba projects:**
 
-1. Find the Docker image name:
+1. Get your Odoo version from `.copier-answers.yml`:
    ```bash
-   grep -E "image:|services:" docker-compose.yml | head -5
-   # Or check doodba base image indirectly
+   grep "odoo_version" .copier-answers.yml
+   # Output example: odoo_version: 17.0
+   ```
+   Document this as `<ODOO_VERSION>`.
+
+2. The Doodba base image follows a standard pattern. Confirm it:
+   ```bash
+   cat odoo/Dockerfile
+   # Should show: FROM ghcr.io/tecnativa/doodba:${ODOO_VERSION}-onbuild
    ```
 
-2. Inspect the image's Python version:
+3. Inspect the image's Python version:
    ```bash
-   # If Doodba is cloned locally:
-   docker image inspect teknativa/doodba:<ODOO_VERSION> 2>/dev/null | grep -i python || echo "Image not found locally, check Doodba wiki"
+   # Construct the full image name and inspect it
+   docker image inspect ghcr.io/tecnativa/doodba:<ODOO_VERSION>-onbuild | grep PYTHON_VERSION
+   # Output example: "PYTHON_VERSION=3.10.19"
    ```
 
-3. Alternatively, check the Doodba wiki (https://github.com/Tecnativa/doodba-copier-template/wiki):
+4. If the image is not available locally, check the Doodba wiki (https://github.com/Tecnativa/doodba-copier-template/wiki):
    - Look up your `<ODOO_VERSION>` in the Doodba documentation
-   - Note the Python version (e.g., Python 3.10.19 for Odoo 17)
+   - Note the Python version listed there
 
 Document this value as `<PYTHON_VERSION>` (e.g., `3.10.19`, `3.11.8`).
 
