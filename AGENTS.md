@@ -209,12 +209,76 @@ If LSP is not working:
 
 ## Troubleshooting LSP Integration
 
+### Correct odools.toml Structure (Critical)
+
+OdooLS configuration must use the `[[config]]` array-of-tables TOML syntax, NOT bare `[Odoo]` or `[odoo]` sections.
+
+**CORRECT per wiki:**
+```toml
+[[config]]
+name = "default"
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+python_path = "/path/to/python3"
+addons_paths = [
+  "${workspaceFolder}/addons/path1",
+  "${workspaceFolder}/addons/path2",
+]
+diag_missing_imports = "only_odoo"  # For Docker projects
+refresh_mode = "adaptive"           # For OpenCode (no didSave support)
+```
+
+**WRONG (will be ignored by server):**
+```toml
+[Odoo]
+odoo_path = "..."
+
+[odoo]
+addons_paths = [...]
+```
+
+See: https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files
+
+### Profile Selection: name ↔ selectedProfile
+
+The `name` field in `[[config]]` must match the `selectedProfile` sent by your IDE client:
+
+**opencode.json (OpenCode):**
+```json
+{
+  "lsp": {
+    "odoo-ls": {
+      "initialization": {
+        "selectedProfile": "default"
+      }
+    }
+  }
+}
+```
+
+**odools.toml (server):**
+```toml
+[[config]]
+name = "default"  # Must match selectedProfile above
+...
+```
+
+All IDE plugins (VSCode, PyCharm, Neovim, Zed) follow this pattern. Mismatch prevents the server from loading the correct profile.
+
+### Diagnostic Filtering for Docker Projects
+
+When Python is on the host but dependencies are in Docker, use:
+
+```toml
+diag_missing_imports = "only_odoo"
+```
+
+This suppresses `ModuleNotFound` errors for non-Odoo packages (lxml, werkzeug, etc.) that the host Python doesn't have.
+
 ### Verify LSP Indexing Status
 
-The Odoo Language Server sends a custom notification when indexing completes:
+Monitor logs in real-time:
 
 ```bash
-# Monitor logs in real-time
 tail -f ~/.local/bin/logs/odoo_logs.*.log | grep -E "loadingStatusUpdate|ERROR|WARN"
 ```
 
@@ -235,7 +299,7 @@ odoo_ls_server --parse \
 ```
 
 - `--parse` mode loads the project, generates diagnostics, writes JSON to `-o`, then exits
-- Use `--python /path/to/python3` to test with a specific Python interpreter (only works in `--parse` mode)
+- Use `--python /path/to/python3` to test with a specific Python interpreter (parse mode only)
 
 ### Debugging Python Import Errors
 
@@ -246,7 +310,7 @@ If you see many `ModuleNotFound: No module named 'odoo'` errors:
    ```bash
    /path/to/python3 -c "import odoo; print(odoo.__file__)"
    ```
-3. If using Docker (Doodba), create a virtualenv on the host and install Odoo editable:
+3. For Docker projects (Doodba), create a virtualenv on the host:
    ```bash
    python3 -m venv ~/.venv/odoo17
    source ~/.venv/odoo17/bin/activate
@@ -259,14 +323,25 @@ If you see many `ModuleNotFound: No module named 'odoo'` errors:
 
 ### Known Limitations
 
-- **XML support is in alpha** — field validation on Odoo views may produce false positives or crash on go-to-definition
-- **3-second timeout in OpenCode** — if indexing a large project (30+ addon repos) takes longer than 3 seconds after `touchFile`, OpenCode may not capture diagnostics. Logs are still written to disk.
-- **Python in Docker not supported** — `odoo_ls_server` runs on the host and expects a Python interpreter on the host. Docker containers are not currently supported as a Python source.
-- **Non-standard `odools.toml` locations** — if you use a non-default `odools.toml` path, pass `--config-path` via opencode.json: `"command": ["odoo_ls_server", "--config-path", "/path/to/odools.toml"]`
+- **XML support is in alpha** — field validation and go-to-definition may crash or produce false positives
+- **3-second timeout in OpenCode** — large projects (30+ addon repos) may exceed the wait time for diagnostics after file edit. Logs are still written to disk.
+- **Python in Docker not supported** — `odoo_ls_server` runs on the host and expects a host Python interpreter. Docker containers cannot be used as Python sources.
+- **Malformed `odools.toml` causes auto-detect** — if `[[config]]` structure is wrong, the server ignores the file and attempts unreliable auto-detection
+
+### IDE Plugin References
+
+The following IDE plugins have been investigated and verified to send `workspace/configuration` correctly:
+
+- **VSCode**: https://github.com/odoo/odoo-vscode
+- **PyCharm**: https://github.com/odoo/odoo-pycharm
+- **Neovim**: https://github.com/odoo/odoo-neovim
+- **Zed**: https://github.com/odoo/odoo-zed
+
+All use the same pattern: profile name in config file must match `selectedProfile` sent via `workspace/configuration`.
 
 ### Verify Integration with LSP Tool (Experimental)
 
-If you have `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` enabled, you can query the LSP directly:
+If you have `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` enabled:
 
 ```bash
 OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
