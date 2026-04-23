@@ -190,22 +190,26 @@ rm /tmp/typeshed.zip
 
 ---
 
-## Step 2: Create Host Virtual Environment with Odoo
+## Step 2: Create Virtual Environment at Doodba Project Root
 
-The LSP server needs a Python environment where Odoo can be imported for type resolution.
+The LSP server needs a Python environment where Odoo can be imported for type resolution. Create the venv **at the Doodba project root** — the directory containing `devel.yaml`, `.copier-answers.yml`, and `odoo/`.
 
 ### Create Virtual Environment
 
 Use the Python version detected in Prerequisites:
 
 ```bash
-~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 -m venv ~/.venv/odoo<ODOO_VERSION>
+cd /path/to/your/doodba-root
+~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 -m venv .venv-odoo<ODOO_VERSION>
 ```
+
+This creates the venv at `<doodba-root>/.venv-odoo<ODOO_VERSION>/` — same level as `opencode.json` and `odools.toml`.
 
 ### Activate and Install Prerequisites
 
 ```bash
-source ~/.venv/odoo<ODOO_VERSION>/bin/activate
+cd /path/to/your/doodba-root
+source .venv-odoo<ODOO_VERSION>/bin/activate
 pip install --upgrade pip
 ```
 
@@ -214,8 +218,8 @@ pip install --upgrade pip
 Assuming your Odoo source is at `odoo/custom/src/odoo/` (Doodba structure):
 
 ```bash
-# Replace the path with your actual Odoo source location
-pip install -e /path/to/your/project/odoo/custom/src/odoo
+# You are already in the doodba root, so use relative path
+pip install -e ./odoo/custom/src/odoo
 ```
 
 **Note:** The `-e` flag installs in "editable" mode, which allows setuptools to locate Odoo modules from the source directory.
@@ -223,14 +227,14 @@ pip install -e /path/to/your/project/odoo/custom/src/odoo
 ### Verify Odoo Import Works
 
 ```bash
-~/.venv/odoo<ODOO_VERSION>/bin/python3 -c "import odoo; print(odoo.__file__)"
-# Should print something like: /path/to/odoo/custom/src/odoo/__init__.py
+.venv-odoo<ODOO_VERSION>/bin/python3 -c "import odoo; print(odoo.__file__)"
+# Should print something like: /path/to/doodba-root/odoo/custom/src/odoo/__init__.py
 ```
 
 If this fails, check:
 - The path to Odoo source is correct
-- Setuptools is installed
-- The virtual environment was activated
+- The virtual environment was created correctly
+- You are in the Doodba project root directory
 
 ### Deactivate (Optional)
 
@@ -242,13 +246,19 @@ deactivate
 
 ---
 
-## Step 3: Create opencode.json at Project Root
+## Step 3: Create opencode.json at Doodba Project Root
 
 This file configures OpenCode to launch and manage the LSP server.
 
 ### LITERAL — Use Exactly As Shown
 
-Create the file `/path/to/your/project/opencode.json`:
+Create the file at the **Doodba project root** — the directory containing `devel.yaml`, `.copier-answers.yml`, and `odoo/`:
+
+```
+<doodba-root>/opencode.json
+```
+
+File content:
 
 ```json
 {
@@ -276,14 +286,9 @@ Create the file `/path/to/your/project/opencode.json`:
   - Do NOT add `.js` — `odoo_ls_server` does not support JavaScript/OWL components yet.
 - **`"initialization": { "selectedProfile": "default" }`** — Matches the profile name in `odools.toml` (see Step 4).
 
-### Important Notes
-
-- `opencode.json` must be at your Git project root, NOT inside `.opencode/` directory.
-- The `.opencode/` directory is for agents, commands, and plugins only.
-
 ---
 
-## Step 4: Create odools.toml at Project Root
+## Step 4: Create odools.toml at Doodba Project Root
 
 This file configures the LSP server itself with paths to Odoo, Python, and addon directories.
 
@@ -293,13 +298,19 @@ The `odools.toml` file uses TOML's `[[config]]` array-of-tables syntax, NOT bare
 
 ### LITERAL — Use Exactly As Shown (Base Template)
 
-Create the file `/path/to/your/project/odools.toml`:
+Create the file at the **Doodba project root** — same directory as `opencode.json`:
+
+```
+<doodba-root>/odools.toml
+```
+
+File content:
 
 ```toml
 [[config]]
 name = "default"
 odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-python_path = "/home/<username>/.venv/odoo<ODOO_VERSION>/bin/python3"
+python_path = "${workspaceFolder}/.venv-odoo<ODOO_VERSION>/bin/python3"
 stdlib = "/home/<username>/.local/share/odoo-ls/typeshed/stdlib/"
 diag_missing_imports = "only_odoo"
 refresh_mode = "adaptive"
@@ -310,8 +321,8 @@ addons_paths = [
 ```
 
 Replace placeholders:
-- `<username>` — Your system username (e.g., `roly`)
 - `<ODOO_VERSION>` — Major version (e.g., `17`)
+- `<username>` — Your system username (e.g., `roly`) — for stdlib path only
 - Add addon directories (see next section)
 
 ### Understanding Each Field
@@ -396,7 +407,7 @@ addons_paths = [
 [[config]]
 name = "default"
 odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-python_path = "/home/roly/.venv/odoo17/bin/python3"
+python_path = "${workspaceFolder}/.venv-odoo17/bin/python3"
 stdlib = "/home/roly/.local/share/odoo-ls/typeshed/stdlib/"
 diag_missing_imports = "only_odoo"
 refresh_mode = "adaptive"
@@ -422,14 +433,14 @@ Parse mode loads the project, generates diagnostics, writes them to a JSON file,
 **Important:** `odools.toml` is NOT read in parse mode — all configuration is passed via CLI flags. This is confirmed by the maintainer in issue #425. When testing with `--parse`, always pass all flags explicitly.
 
 ```bash
-cd /path/to/your/project
+cd /path/to/your/doodba-root
 
 # Test with a known addon directory
 odoo_ls_server --parse \
   -c "odoo/custom/src/odoo" \
   -a "odoo/custom/src/account-reconcile" \
   -a "odoo/custom/src/bank-payment" \
-  --python "/home/<username>/.venv/odoo<ODOO_VERSION>/bin/python3" \
+  --python ".venv-odoo<ODOO_VERSION>/bin/python3" \
   --stdlib "/home/<username>/.local/share/odoo-ls/typeshed/stdlib/" \
   -o /tmp/diagnostics.json \
   --log-level debug
@@ -438,9 +449,9 @@ odoo_ls_server --parse \
 Replace:
 - `<username>` — Your system username
 - `<ODOO_VERSION>` — Major version (e.g., `17`)
-- `-c <path>` — Odoo source path
+- `-c <path>` — Odoo source path (relative to doodba root)
 - `-a <path>` — Each addon directory (add one `-a` per directory, or use just 1-2 for testing)
-- `--python <path>` — Python executable from Step 2
+- `--python <path>` — Python executable from Step 2 (relative path from doodba root)
 - `--stdlib <path>` — Typeshed path from Step 1 (must have trailing `/`)
 - `-o <file>` — Output file for diagnostics JSON
 - `--log-level debug` — Verbose logging (use `info` or `warn` for less output)
