@@ -515,6 +515,8 @@ tail -f <logs_directory>/opencode-lsp-*.log | grep -E "loadingStatusUpdate|ERROR
 
 Once LSP is working, test it with agents using the `lsp` tool:
 
+**Note:** The `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` environment variable must be set for agents to call lsp tool operations (hover, workspaceSymbol, goToDefinition, etc.). Without it, agents silently fall back to grep/read and never query the LSP.
+
 ```bash
 OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
   "Use the lsp tool to query workspaceSymbol for 'AccountMove' (or any model in your project). \
@@ -529,11 +531,7 @@ Expected: The agent returns a file path to a Python model definition in your add
 
 **OpenCode `command` arrays do NOT expand variables** — When using `--config-path`, you must use absolute paths or binaries on `PATH`. Variables like `${workspaceFolder}` are NOT expanded by OpenCode. Variable expansion happens in certain contexts (like `instructions` paths), but not in `lsp.*.command` arrays. If you want to use `--config-path`, pass an absolute path like `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml"]`.
 
-**Symlink farm deduplication issue** — The `odoo/auto/addons/` symlink farm resolves to the same inodes as repository directories. The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented. To avoid unpredictable deduplication, use explicit `odoo/custom/src/<repo>` paths in `addons_paths` instead of the symlink farm (Option A in Step 4).
-
 **Setting `addons_paths` disables auto-detection** — Any value (including `[]`) disables Odoo LSP's auto-detection. If you need auto-detection alongside explicit paths, add the literal string `"$autoDetectAddons"` to the array.
-
-**`lsp` tool requires an experimental flag** — `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` must be set for agents to call lsp tool operations (hover, workspaceSymbol, goToDefinition, etc.). Without it, agents silently fall back to grep/read and never query the LSP.
 
 ---
 
