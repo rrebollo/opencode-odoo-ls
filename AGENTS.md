@@ -188,6 +188,8 @@ ls -la ~/.local/share/odoo-ls/typeshed/stdlib/ | head -10
 rm /tmp/typeshed.zip
 ```
 
+**Note on tar extraction warnings:** When extracting the `odoo_ls_server` binary, you may see warnings like "Cannot utime" or "Cannot change mode". These are harmless and occur due to `/tmp` directory permissions. The binary is extracted successfully despite these warnings.
+
 ---
 
 ## Step 2: Create Virtual Environment at Doodba Project Root
@@ -235,6 +237,8 @@ If this fails, check:
 - The path to Odoo source is correct
 - The virtual environment was created correctly
 - You are in the Doodba project root directory
+
+**For Docker projects:** The virtual environment won't have all runtime dependencies (lxml, PyPDF2, psycopg2, etc.) because they're only available in the Docker container. This is OK for LSP purposes. The LSP server uses the venv only for type resolution and module location, not for executing Odoo code. The import may fail at runtime with `ModuleNotFoundError`, but that doesn't affect LSP functionality. To suppress import-not-found diagnostics in the LSP, we use `diag_missing_imports = "only_odoo"` in `odools.toml` (Step 4).
 
 ### Deactivate (Optional)
 
@@ -329,7 +333,7 @@ Replace placeholders:
 
 - **`name = "default"`** — Profile identifier. Must match `selectedProfile` in `opencode.json` above.
 - **`odoo_path`** — Path to the Odoo source directory (the one containing `odoo/__init__.py`). Uses `${workspaceFolder}` which is expanded by the LSP server at initialization to the Git repository root.
-- **`python_path`** — Absolute path to the Python executable in your venv from Step 2. This Python must have Odoo installed. **Cannot use variables** — must be absolute path.
+- **`python_path`** — Absolute path to the Python executable in your venv from Step 2. This Python must have Odoo installed. Example: `/home/roly/projects/binhex/OCA/oca-16/.venv-odoo16/bin/python3`. Do NOT use `${workspaceFolder}` or other variables here — the TOML parser does not expand variables in this field. (The `odoo_path` field uses variables because the LSP server itself expands them at runtime, but `python_path` must be absolute since it's resolved by the tool loading the config file.)
 - **`stdlib`** — Absolute path to typeshed stdlib from Step 1. **CRITICAL: Must have trailing `/`** — Without it, the server fails to find `builtins.pyi`. See https://github.com/odoo/odoo-ls/issues/425#issuecomment-3311402591
 - **`diag_missing_imports = "only_odoo"`** — For Docker projects: suppresses `ModuleNotFound` errors for non-Odoo packages (lxml, werkzeug, psycopg2, etc.) that the host Python doesn't have. These are only available in the Docker container.
 - **`refresh_mode = "adaptive"`** — Correct for OpenCode, which never sends `didSave` notifications, only `didChange`. This tells the server not to wait for explicit save events.
@@ -471,10 +475,16 @@ cat /tmp/diagnostics.json | head -50
 # Should contain JSON with diagnostics entries, or empty array [] if no issues found
 ```
 
+**Note on parse mode logs:** The logs will show some WARN and ERROR messages, such as:
+- `Module not found for id: account.menu_finance_entries` — Expected for modules outside the indexed addon directories
+- `not handled method: $/progress` — Parser-mode-specific, not relevant to server mode
+
+These are **non-blocking** and do not prevent LSP functionality.
+
 **If parse mode fails:**
 - Check error messages (usually related to Python or stdlib paths)
 - Verify all `-c`, `-a`, `--python`, `--stdlib` paths exist and are correct
-- See Troubleshooting section below for common errors
+- See "Important Notes and Limitations" section below for common issues
 
 ### Test with OpenCode LSP Server Mode
 
