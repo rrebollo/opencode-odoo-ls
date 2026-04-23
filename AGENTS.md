@@ -136,6 +136,18 @@ The LSP server (`odoo_ls_server`) and typeshed stubs must be installed on your h
 Download and install the latest release of `odoo_ls_server` to `~/.local/bin/`:
 
 ```bash
+# Check if already installed
+if command -v odoo_ls_server &>/dev/null; then
+  INSTALLED=$(odoo_ls_server --version 2>&1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  LATEST=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+  echo "odoo_ls_server already installed: ${INSTALLED} (latest: ${LATEST})"
+  echo "Skip this step unless you want to upgrade."
+  # Verify it works
+  odoo_ls_server --help > /dev/null && echo "Binary OK — proceed to Step 1b (typeshed)"
+fi
+
+# If not installed (or upgrading), proceed:
+
 # Create directories
 mkdir -p ~/.local/bin ~/.local/share/odoo-ls
 
@@ -173,6 +185,17 @@ odoo_ls_server --help
 Typeshed provides Python standard library type definitions. Without it, the LSP server cannot resolve types.
 
 ```bash
+# Check if typeshed already exists
+if [ -f ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi ]; then
+  echo "Typeshed already installed at ~/.local/share/odoo-ls/typeshed/stdlib/"
+  echo "Skip this step unless you need to upgrade to match a new odoo_ls_server release."
+fi
+
+# If not installed (or upgrading), proceed:
+# Note: RELEASE must be set from the binary installation step above.
+# If running this step independently, re-set RELEASE first:
+# RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+
 # Download typeshed.zip from the same release
 curl -L -o /tmp/typeshed.zip \
   "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
@@ -202,10 +225,23 @@ Use the Python version detected in Prerequisites:
 
 ```bash
 cd /path/to/your/doodba-root
-~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 -m venv .venv-odoo<ODOO_VERSION>
+
+# Check if venv already exists
+if [ -d ".venv-odoo<ODOO_VERSION>" ]; then
+  echo "Venv .venv-odoo<ODOO_VERSION> already exists."
+  echo "Verifying Odoo import..."
+  if .venv-odoo<ODOO_VERSION>/bin/python3 -c "import odoo" 2>/dev/null; then
+    echo "Odoo import OK — skip to Step 3."
+  else
+    echo "Odoo import failed — re-run pip install below."
+  fi
+else
+  # Create the venv
+  ~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 -m venv .venv-odoo<ODOO_VERSION>
+fi
 ```
 
-This creates the venv at `<doodba-root>/.venv-odoo<ODOO_VERSION>/` — same level as `opencode.json` and `odools.toml`.
+This creates (or verifies) the venv at `<doodba-root>/.venv-odoo<ODOO_VERSION>/` — same level as `opencode.json` and `odools.toml`.
 
 ### Activate and Install Prerequisites
 
@@ -262,7 +298,7 @@ Create the file at the **Doodba project root** — the directory containing `dev
 <doodba-root>/opencode.json
 ```
 
-File content:
+**If the file does NOT exist**, create it with this content:
 
 ```json
 {
@@ -278,6 +314,24 @@ File content:
     }
   }
 }
+```
+
+**If the file already exists**, merge the LSP configuration without overwriting existing settings (MCPs, keybindings, themes, etc.):
+
+```bash
+# Merge: add/update only the lsp section, preserve everything else
+jq '.lsp.pyright = {"disabled": true} |
+    .lsp["odoo-ls"] = {
+      "command": ["odoo_ls_server"],
+      "extensions": [".py", ".xml"],
+      "initialization": {"selectedProfile": "default"}
+    }' opencode.json > opencode.json.tmp && mv opencode.json.tmp opencode.json
+```
+
+Verify the result:
+```bash
+cat opencode.json
+# Should contain the lsp section alongside any pre-existing configuration
 ```
 
 ### Explanation of Each Field
@@ -307,6 +361,8 @@ Create the file at the **Doodba project root** — same directory as `opencode.j
 ```
 <doodba-root>/odools.toml
 ```
+
+If this file already exists from a previous setup run, overwrite it — it is managed entirely by this guide.
 
 File content:
 
@@ -511,11 +567,34 @@ tail -f <logs_directory>/opencode-lsp-*.log | grep -E "loadingStatusUpdate|ERROR
 # Indexing is complete and diagnostics are ready
 ```
 
-### Test with Agents (Optional)
+### Automatic Diagnostics (no flag required)
 
-Once LSP is working, test it with agents using the `lsp` tool:
+Once the LSP server is running, OpenCode automatically injects diagnostics into tool results after every file edit or write. After the agent edits a `.py` or `.xml` file, it sees output like:
 
-**Note:** The `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` environment variable must be set for agents to call lsp tool operations (hover, workspaceSymbol, goToDefinition, etc.). Without it, agents silently fall back to grep/read and never query the LSP.
+```
+LSP errors detected in this file, please fix:
+<diagnostics file="...">ERROR [line:col] message</diagnostics>
+```
+
+This works for `odoo-ls` exactly like built-in LSPs (pyright, etc.). No flag or extra configuration is needed — having `odoo-ls` in `opencode.json` is sufficient.
+
+### Active Queries (OPENCODE_EXPERIMENTAL_LSP_TOOL=true required)
+
+Active queries are explicit LSP operations the agent can invoke on demand, independently of any file edit:
+
+- **`workspaceSymbol`** — find where a model or class is defined across the whole codebase
+- **`goToDefinition`** — jump to the definition of a symbol at a given position
+- **`hover`** — get type information about a symbol at a given position
+
+These are gated by an experimental flag. Without it, the agent silently falls back to grep/read and never invokes the LSP directly for these operations.
+
+To enable, set the environment variable before starting OpenCode:
+
+```bash
+OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode
+```
+
+Or test directly with a one-shot query:
 
 ```bash
 OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
