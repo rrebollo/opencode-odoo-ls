@@ -496,28 +496,6 @@ Expected: The agent returns a file path to a Python model definition in your add
 
 ---
 
-## Gotchas
-
-**OpenCode `command` arrays do NOT expand variables** — When using `--config-path`, you must use absolute paths or binaries on `PATH`. Variables like `${workspaceFolder}` are NOT expanded by OpenCode. Variable expansion happens in certain contexts (like `instructions` paths), but not in `lsp.*.command` arrays. If you want to use `--config-path`, pass an absolute path like `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml"]`.
-
-**`odoo_ls_server` ≠ `odoo-lsp`** — The community fork (github.com/Desdaemon/odoo-lsp) has a different binary name. The official server (github.com/odoo/odoo-ls) is `odoo_ls_server`. Don't confuse them.
-
-**Disable pyright or get noise** — `odoo_ls_server` is a full Python LSP with its own type resolution. Running alongside OpenCode's built-in pyright gives duplicate completions and conflicting diagnostics. `"pyright": { "disabled": true }` applies only to this project's `opencode.json` — other projects are unaffected.
-
-**No XML LSP conflict** — OpenCode has no built-in XML language server, so registering `odoo_ls_server` with `"extensions": [".py", ".xml"]` has no conflicts. The only active LSP for `.xml` files in this project will be `odoo_ls_server`. No additional `disabled` entries are needed for XML support.
-
-**Symlink farm deduplication issue** — The `odoo/auto/addons/` symlink farm resolves to the same inodes as repository directories. The LSP anti-deduplication algorithm behavior with symlink aliasing is undocumented. To avoid unpredictable deduplication, use explicit `odoo/custom/src/<repo>` paths in `addons_paths` instead of the symlink farm.
-
-**Setting `addons_paths` disables auto-detection** — Any value (including `[]`) disables Odoo LSP's auto-detection. If you need auto-detection alongside explicit paths, add the literal string `"$autoDetectAddons"` to the array.
-
-**`--addons` and `--python` CLI flags are irrelevant in LSP mode** — These flags only work in parse mode (`--parse`), not in LSP server mode. In server mode, configuration is entirely via `odools.toml`.
-
-**`lsp` tool requires an experimental flag** — `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` must be set for agents to call lsp tool operations (hover, workspaceSymbol, goToDefinition, etc.). Without it, agents silently fall back to grep/read and never query the LSP.
-
-**`--log-level` must be lowercase** — The correct flag is `--log-level debug`, not `--log-level DEBUG`. TOML configs and CLI parsing differ.
-
----
-
 ## IDE Plugin References
 
 The following IDE plugins have been investigated and verified to work with Odoo LSP by sending `workspace/configuration` correctly:
