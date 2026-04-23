@@ -207,6 +207,76 @@ If LSP is not working:
 
 ---
 
+## Troubleshooting LSP Integration
+
+### Verify LSP Indexing Status
+
+The Odoo Language Server sends a custom notification when indexing completes:
+
+```bash
+# Monitor logs in real-time
+tail -f ~/.local/bin/logs/odoo_logs.*.log | grep -E "loadingStatusUpdate|ERROR|WARN"
+```
+
+When you see `$Odoo/loadingStatusUpdate: "stop"`, indexing is complete and diagnostics are ready.
+
+### One-Shot Parse Mode (No IDE Required)
+
+Test the LSP without OpenCode:
+
+```bash
+cd /your/project/path
+odoo_ls_server --parse \
+  -c odoo/custom/src/odoo \
+  -a odoo/custom/src/addon1 \
+  -a odoo/custom/src/addon2 \
+  -o /tmp/diagnostics.json \
+  --log-level DEBUG
+```
+
+- `--parse` mode loads the project, generates diagnostics, writes JSON to `-o`, then exits
+- Use `--python /path/to/python3` to test with a specific Python interpreter (only works in `--parse` mode)
+
+### Debugging Python Import Errors
+
+If you see many `ModuleNotFound: No module named 'odoo'` errors:
+
+1. Ensure `python_path` in `odools.toml` points to a Python that has Odoo installed
+2. Test the Python directly:
+   ```bash
+   /path/to/python3 -c "import odoo; print(odoo.__file__)"
+   ```
+3. If using Docker (Doodba), create a virtualenv on the host and install Odoo editable:
+   ```bash
+   python3 -m venv ~/.venv/odoo17
+   source ~/.venv/odoo17/bin/activate
+   pip install -e /path/to/odoo/source
+   ```
+4. Update `odools.toml`:
+   ```toml
+   python_path = "/home/user/.venv/odoo17/bin/python3"
+   ```
+
+### Known Limitations
+
+- **XML support is in alpha** — field validation on Odoo views may produce false positives or crash on go-to-definition
+- **3-second timeout in OpenCode** — if indexing a large project (30+ addon repos) takes longer than 3 seconds after `touchFile`, OpenCode may not capture diagnostics. Logs are still written to disk.
+- **Python in Docker not supported** — `odoo_ls_server` runs on the host and expects a Python interpreter on the host. Docker containers are not currently supported as a Python source.
+- **Non-standard `odools.toml` locations** — if you use a non-default `odools.toml` path, pass `--config-path` via opencode.json: `"command": ["odoo_ls_server", "--config-path", "/path/to/odools.toml"]`
+
+### Verify Integration with LSP Tool (Experimental)
+
+If you have `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` enabled, you can query the LSP directly:
+
+```bash
+OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
+  "Use the lsp tool to query workspaceSymbol for 'AccountMove' in the current workspace"
+```
+
+This tests whether the LSP is indexing Python model definitions.
+
+---
+
 ## Gotchas
 
 **OpenCode `command` arrays do NOT expand variables** — When using `--config-path`, you must use absolute paths or binaries on `PATH`. Variables like `${workspaceFolder}` are NOT expanded by OpenCode. Variable expansion happens in certain contexts (like `instructions` paths), but not in `lsp.*.command` arrays. If you want to use `--config-path`, pass an absolute path like `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml"]`.
@@ -224,3 +294,114 @@ If LSP is not working:
 **`--addons` and `--python` CLI flags are irrelevant** — They only work in parse mode, not in LSP server mode. Config is entirely via `odools.toml`.
 
 **`lsp` tool requires an experimental flag** — `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` must be set for agents to call lsp tool operations (hover, workspaceSymbol, goToDefinition, etc.). Without it, agents silently fall back to grep/read and never query the LSP.
+
+---
+
+## Troubleshooting
+
+### LSP not responding to queries?
+
+**First, test in parse mode (no agent):**
+```bash
+odoo_ls_server --parse \
+  -c /path/to/odoo/custom/src/odoo \
+  -a /path/to/odoo/custom/src/addon1 \
+  -a /path/to/odoo/custom/src/addon2 \
+  -o /tmp/diagnostics.json
+```
+
+If parse mode completes but LSP server doesn't respond in OpenCode:
+
+1. **Check initialization is happening:**
+   ```bash
+   opencode debug paths
+   # Check the logs directory, then:
+   tail -100 <logs_directory>/opencode-lsp-*.log | grep -i "selectedProfile\|initialization\|odoo-ls"
+   ```
+
+2. **Verify Python can import odoo:**
+   ```bash
+   /path/to/python_path -c "import odoo; print(odoo.__file__)"
+   ```
+   If this fails, the virtualenv isn't set up. See Step 2 of this guide.
+
+3. **Test diagnostics directly:**
+   ```bash
+   opencode debug lsp diagnostics odoo/custom/src/<addon>/models/model.py
+   ```
+
+4. **Check if indexing completed:**
+   ```bash
+   grep -i "loadingStatusUpdate" <logs_directory>/opencode-lsp-*.log | tail -1
+   # Should show: loadingStatusUpdate: "stop"
+   ```
+
+### Python import errors in diagnostics?
+
+This means the LSP found the model file but couldn't resolve `import odoo`.
+
+**Fix:** Update `odools.toml` with `python_path` pointing to a Python interpreter that has Odoo installed:
+
+```toml
+[Odoo]
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+python_path = "/path/to/python3"  # Must have: python3 -c "import odoo" works
+```
+
+For Doodba projects, create a host virtualenv:
+```bash
+python3 -m venv ~/.venv/odoo17
+source ~/.venv/odoo17/bin/activate
+pip install -e /path/to/odoo/custom/src/odoo
+python -c "import odoo; print(odoo.__file__)"  # Verify
+```
+
+Then set `python_path = "/path/to/.venv/odoo17/bin/python3"` in `odools.toml`.
+
+### XML validation errors on valid Odoo views?
+
+XML support in `odoo_ls_server` is alpha. Known issues:
+
+- View `<field>` validation may crash if the model isn't indexed yet
+- `name=` attribute validation may produce false positives
+- Go-to-definition from view to model works inconsistently
+
+**Workaround:** Wait for the indexing to complete (check logs for `loadingStatusUpdate: "stop"`), then reload the file in OpenCode.
+
+### 3-second timeout waiting for LSP diagnostics?
+
+Large projects may exceed OpenCode's default 3-second LSP timeout. This is a platform limitation — not all diagnostics will be shown.
+
+**Check if this is happening:**
+```bash
+grep "timeout" <logs_directory>/opencode-lsp-*.log
+```
+
+**Partial workaround:** The `lsp` tool (workspaceSymbol, goToDefinition) has its own 30-second timeout and may work even if initial diagnostics timeout.
+
+### LSP server crashes on startup?
+
+1. Check the logs:
+   ```bash
+   opencode debug paths  # Get logs directory
+   tail -200 <logs_directory>/opencode-lsp-*.log
+   ```
+
+2. If error is `odoo_ls_server: command not found`:
+   ```bash
+   which odoo_ls_server
+   # If empty, install it: see Step 2 of this guide
+   ```
+
+3. If error is about `typeshed.zip`:
+   ```bash
+   ls -la ~/.local/share/odoo-ls/
+   # If typeshed is missing, download it: see Step 2
+   ```
+
+4. If error mentions config parsing:
+   ```bash
+   # Verify odools.toml syntax:
+   cat odools.toml | head -20
+   # Check for: mismatched quotes, missing brackets, trailing commas
+   ```
