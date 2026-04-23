@@ -264,6 +264,22 @@ name = "default"  # Must match selectedProfile above
 
 All IDE plugins (VSCode, PyCharm, Neovim, Zed) follow this pattern. Mismatch prevents the server from loading the correct profile.
 
+### stdlib Path: Trailing Slash Required
+
+The `stdlib` key in `odools.toml` requires a **trailing `/`** for directory paths. Without it, the server may fail to find `builtins.pyi`.
+
+**CORRECT:**
+```toml
+stdlib = "/path/to/typeshed/stdlib/"
+```
+
+**WRONG (will fail):**
+```toml
+stdlib = "/path/to/typeshed/stdlib"
+```
+
+See: https://github.com/odoo/odoo-ls/issues/425#issuecomment-3311402591
+
 ### Diagnostic Filtering for Docker Projects
 
 When Python is on the host but dependencies are in Docker, use:
@@ -298,8 +314,11 @@ odoo_ls_server --parse \
   --log-level DEBUG
 ```
 
+**Important:** `odools.toml` is **NOT used** in `--parse` (CLI) mode — confirmed by maintainer in issue #425. Only LSP server mode reads configuration files. Always pass `-c`, `-a`, `--python`, `--stdlib` explicitly when testing with `--parse`.
+
 - `--parse` mode loads the project, generates diagnostics, writes JSON to `-o`, then exits
 - Use `--python /path/to/python3` to test with a specific Python interpreter (parse mode only)
+- Use `--stdlib /path/to/typeshed/stdlib/` to specify typeshed path (parse mode only)
 
 ### Debugging Python Import Errors
 
