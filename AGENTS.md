@@ -1,636 +1,325 @@
-# opencode-odoo-ls
+# OpenCode Odoo LSP Setup Guide (Agent-Oriented)
 
-Configure Odoo Language Server Protocol (LSP) support for OpenCode in a Doodba project. After completing setup, agents working in this project will receive Odoo-aware diagnostics on every file edit and can use the `lsp` tool to query model definitions, field types, and symbol locations.
+Configure Odoo Language Server Protocol (LSP) support for OpenCode in a Doodba project. After setup, agents receive Odoo-aware diagnostics on file edits and can use the `lsp` tool for model/field queries.
 
----
-
-## For Agents: How to Use This Guide
-
-This guide is designed for agents to follow. It provides:
-
-- **LITERAL instructions** — marked clearly (e.g., "LITERAL — use exactly as shown")
-- **FLEXIBLE choices** — marked clearly (e.g., "FLEXIBLE — your choice") where you should decide based on project structure
-- **Variable placeholders** — paths like `<ODOO_VERSION>`, `<PYTHON_VERSION>`, or `${workspaceFolder}` that YOU must substitute with actual values
-- **Decision points** — places where the setup depends on your project's layout
-
-**Approach:** Read through the entire guide first. Then execute the steps, adapting paths and choices to your specific project structure. If something doesn't match your layout, check the "Troubleshooting" section or refer to `docs/VERIFIED_FACTS.md` for more context.
+This guide is for **code agents** to execute automatically. Each step includes a validation command with expected output.
 
 ---
 
-## Prerequisites: Confirm Environment
+## Prerequisites: Environment Detection
 
-Before configuring LSP, determine your project environment and gather required information.
-
-### Verify Doodba Project
-
-For Doodba-based Odoo projects:
+Detect the environment before configuring. All detected values become placeholders for subsequent steps.
 
 ```bash
-grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA OK"
+# 1. Verify Doodba
+grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA_OK" || echo "NON_DOODBA"
+
+# 2. Detect Odoo version
+ODOO_VERSION=$(grep -oP 'odoo_version:\s*\K[\d.]+' .copier-answers.yml | cut -d. -f1)
+echo "ODOO_VERSION=${ODOO_VERSION}"
+
+# 3. Detect Python version from Docker image
+PYTHON_VERSION=$(docker image inspect ghcr.io/tecnativa/doodba:${ODOO_VERSION}-onbuild 2>/dev/null | grep -oP 'PYTHON_VERSION=\K[^"]+' || echo "MISSING")
+echo "PYTHON_VERSION=${PYTHON_VERSION}"
+
+# 4. Detect tools
+for tool in curl git docker pyenv jq gh; do
+  command -v "$tool" >/dev/null 2>&1 && echo "$tool: OK" || echo "$tool: MISSING"
+done
+
+# 5. Detect Odoo source dynamically
+ODOO_SRC=$(find . -maxdepth 4 -name "setup.py" -path "*/odoo/*" ! -path "*/odoo/odoo/*" 2>/dev/null | head -1 | xargs -r dirname)
+[ -z "$ODOO_SRC" ] && ODOO_SRC=$(find . -maxdepth 3 -name "setup.py" -exec grep -l "find_packages" {} \; 2>/dev/null | head -1 | xargs dirname)
+echo "ODOO_SRC=${ODOO_SRC}"
+
+# 6. Install matching Python (if missing)
+pyenv install -s "${PYTHON_VERSION}"
 ```
 
-If this command succeeds, you have a Doodba project (Docker-based, recommended target).
-
-For non-Doodba projects (plain Odoo, OCA multi-repo): Adapt the paths in Step 3 and Step 4 (addon discovery) to match your layout. The LSP setup itself (Steps 1–5) is the same for any Odoo environment.
-
-### Determine Your Odoo Version
-
-The Odoo version determines which Python version and dependency versions you'll need.
-
-**For Doodba projects:**
-```bash
-# Check the project's Odoo version
-grep -E "ODOO_VERSION|odoo_version" .copier-answers.yml || grep -E "ODOO_VERSION" docker-compose.yml || cat .env | grep ODOO_VERSION
-# Common values: 16, 17, 18 (major version only)
-```
-
-**For non-Doodba projects:**
-Check your `odoo/__init__.py` or your project's dependency manifest.
-
-Document this value as `<ODOO_VERSION>` for use in subsequent steps.
-
-### Detect Python Version from Docker Image
-
-Because `odoo_ls_server` runs on your host (not in Docker), it must use a Python interpreter that matches the container's Python version exactly. Type resolution depends on version-specific bytecode and stdlib paths.
-
-**For Doodba projects:**
-
-1. Get your Odoo version from `.copier-answers.yml`:
-   ```bash
-   grep "odoo_version" .copier-answers.yml
-   # Output example: odoo_version: 17.0
-   ```
-   Document this as `<ODOO_VERSION>`.
-
-2. The Doodba base image follows a standard pattern. Confirm it:
-   ```bash
-   cat odoo/Dockerfile
-   # Should show: FROM ghcr.io/tecnativa/doodba:${ODOO_VERSION}-onbuild
-   ```
-
-3. Inspect the image's Python version:
-   ```bash
-   # Construct the full image name and inspect it
-   docker image inspect ghcr.io/tecnativa/doodba:<ODOO_VERSION>-onbuild | grep PYTHON_VERSION
-   # Output example: "PYTHON_VERSION=3.10.19"
-   ```
-
-4. If the image is not available locally, check the Doodba wiki (https://github.com/Tecnativa/doodba-copier-template/wiki):
-   - Look up your `<ODOO_VERSION>` in the Doodba documentation
-   - Note the Python version listed there
-
-Document this value as `<PYTHON_VERSION>` (e.g., `3.10.19`, `3.11.8`).
-
-### Install Matching Python on Host
-
-Use `pyenv` to install the exact Python version detected above. This ensures type resolution works correctly.
-
-**Install pyenv (if not already installed):**
-```bash
-curl https://pyenv.run | bash
-# Then add to your shell profile (~/.bashrc, ~/.zshrc, etc.):
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv init -)"
-# Reload shell: exec $SHELL
-```
-
-**Install matching Python version:**
-```bash
-pyenv install <PYTHON_VERSION>
-# Verify
-pyenv versions | grep <PYTHON_VERSION>
-```
-
-**Confirm it's available:**
-```bash
-~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 --version
-# Should output: Python <PYTHON_VERSION>
-```
-
-### Verify Required System Tools
-
-Ensure these tools are available on your system:
-
-```bash
-# Essential
-which curl      || echo "Install: curl"
-which git       || echo "Install: git"
-which docker    || echo "Install: docker (or docker desktop)"
-
-# Recommended (for convenience)
-which jq        || echo "Install: jq (for parsing JSON)"
-which unzip     || echo "Install: unzip"
-which python3   || echo "Install: python3 (system default, separate from pyenv)"
-```
+**Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`.
 
 ---
 
 ## Step 1: Install odoo_ls_server Binary and Typeshed
 
-The LSP server (`odoo_ls_server`) and typeshed stubs must be installed on your host.
+### 1a. Detect latest pre-release
 
-### Install the LSP Server Binary
-
-Download and install the latest release of `odoo_ls_server` to `~/.local/bin/`:
+The Odoo LSP project uses odd/even versioning: **odd minor = pre-release** (latest features), **even minor = stable**. Pre-release `1.3.x` is recommended for richer CSV support (go-to-references, xml_id validation, field validation).
 
 ```bash
-# Check if already installed
-if command -v odoo_ls_server &>/dev/null; then
-  INSTALLED=$(odoo_ls_server --version 2>&1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-  LATEST=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-  echo "odoo_ls_server already installed: ${INSTALLED} (latest: ${LATEST})"
-  echo "Skip this step unless you want to upgrade."
-  # Verify it works
-  odoo_ls_server --help > /dev/null && echo "Binary OK — proceed to Step 1b (typeshed)"
+# Primary: use gh CLI (more reliable)
+if command -v gh >/dev/null 2>&1; then
+  RELEASE=$(gh release list --repo odoo/odoo-ls --limit 5 --json tagName | jq -r '.[] | select(.tagName | startswith("1.3")) | .tagName' | head -1)
+else
+  # Fallback: curl (may fail due to API encoding issues)
+  RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.3[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 
-# If not installed (or upgrading), proceed:
+echo "TARGET_RELEASE=${RELEASE}"
+```
 
-# Create directories
-mkdir -p ~/.local/bin ~/.local/share/odoo-ls
+**Expected:** `TARGET_RELEASE` starts with `1.3` (e.g., `1.3.1`). If empty, retry with `curl` or check network connectivity.
 
-# Find the latest release tag
-RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-echo "Installing odoo_ls_server version: $RELEASE"
+### 1b. Download and install
 
-# Download the Linux x86_64 binary
+**CRITICAL:** Tags are `1.3.1` (no `v` prefix). Extract to a subdirectory, not `/tmp` root (avoids `utime` permission errors).
+
+```bash
+mkdir -p ~/.local/bin ~/.local/share/odoo-ls /tmp/odoo-ls-extract
+
+# Download binary
 curl -L -o /tmp/odoo-ls.tar.gz \
   "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/odoo-linux-x86_64-${RELEASE}.tar.gz"
 
-# Extract and install
-tar -xzf /tmp/odoo-ls.tar.gz -C /tmp/
-cp /tmp/odoo_ls_server ~/.local/bin/
+tar -xzf /tmp/odoo-ls.tar.gz -C /tmp/odoo-ls-extract/
+cp /tmp/odoo-ls-extract/odoo_ls_server ~/.local/bin/
 chmod +x ~/.local/bin/odoo_ls_server
 
-# Clean up
-rm /tmp/odoo_ls_server /tmp/odoo-ls.tar.gz
-```
+# Download typeshed from same release
+curl -L -o /tmp/typeshed.zip \
+  "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
+unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
 
-**Add ~/.local/bin to your PATH (if not already there):**
-```bash
+# Cleanup
+rm -rf /tmp/odoo-ls-extract /tmp/odoo-ls.tar.gz /tmp/typeshed.zip
+
+# Ensure PATH
 grep -q '\.local/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Verify installation:**
+**Validation:**
 ```bash
-odoo_ls_server --help
-# Should print usage information without errors
+odoo_ls_server --version
+ls ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi >/dev/null 2>&1 && echo "TYPESHED_OK"
 ```
-
-### Install Typeshed Stubs (Required for Type Resolution)
-
-Typeshed provides Python standard library type definitions. Without it, the LSP server cannot resolve types.
-
-```bash
-# Check if typeshed already exists
-if [ -f ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi ]; then
-  echo "Typeshed already installed at ~/.local/share/odoo-ls/typeshed/stdlib/"
-  echo "Skip this step unless you need to upgrade to match a new odoo_ls_server release."
-fi
-
-# If not installed (or upgrading), proceed:
-# Note: RELEASE must be set from the binary installation step above.
-# If running this step independently, re-set RELEASE first:
-# RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-
-# Download typeshed.zip from the same release
-curl -L -o /tmp/typeshed.zip \
-  "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
-
-# Extract to the shared location (use -o to overwrite if already present)
-unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
-
-# Verify the structure (you should see a typeshed/ subdirectory)
-ls -la ~/.local/share/odoo-ls/typeshed/stdlib/ | head -10
-# Should show .pyi files like builtins.pyi, sys.pyi, etc.
-
-# Clean up
-rm /tmp/typeshed.zip
-```
-
-**Note on tar extraction warnings:** When extracting the `odoo_ls_server` binary, you may see warnings like "Cannot utime" or "Cannot change mode". These are harmless and occur due to `/tmp` directory permissions. The binary is extracted successfully despite these warnings.
+**Expected:** Version shows `1.3.x`. `TYPESHED_OK`.
 
 ---
 
-## Step 2: Create Virtual Environment at Doodba Project Root
+## Step 2: Create Virtual Environment at Project Root
 
-The LSP server needs a Python environment where Odoo can be imported for type resolution. Create the venv **at the Doodba project root** — the directory containing `devel.yaml`, `.copier-answers.yml`, and `odoo/`.
-
-### Create Virtual Environment
-
-Use the Python version detected in Prerequisites:
+### 2a. Create and install Odoo
 
 ```bash
-cd /path/to/your/doodba-root
+VENV_NAME=".venv-odoo${ODOO_VERSION}"
 
-# Check if venv already exists
-if [ -d ".venv-odoo<ODOO_VERSION>" ]; then
-  echo "Venv .venv-odoo<ODOO_VERSION> already exists."
-  echo "Verifying Odoo import..."
-  if .venv-odoo<ODOO_VERSION>/bin/python3 -c "import odoo" 2>/dev/null; then
-    echo "Odoo import OK — skip to Step 3."
-  else
-    echo "Odoo import failed — re-run pip install below."
-  fi
-else
-  # Create the venv
-  ~/.pyenv/versions/<PYTHON_VERSION>/bin/python3 -m venv .venv-odoo<ODOO_VERSION>
-fi
-```
+[ -d "${VENV_NAME}" ] || \
+  "$HOME/.pyenv/versions/${PYTHON_VERSION}/bin/python3" -m venv "${VENV_NAME}"
 
-This creates (or verifies) the venv at `<doodba-root>/.venv-odoo<ODOO_VERSION>/` — same level as `opencode.json` and `odools.toml`.
-
-### Activate and Install Prerequisites
-
-```bash
-cd /path/to/your/doodba-root
-source .venv-odoo<ODOO_VERSION>/bin/activate
+source "${VENV_NAME}/bin/activate"
 pip install --upgrade pip
+pip install -e "./${ODOO_SRC}" --no-deps
 ```
 
-### Install Odoo from Project Source
+### 2b. Import smoke test (CRITICAL)
 
-Assuming your Odoo source is at `odoo/custom/src/odoo/` (Doodba structure):
+Run **from outside the project directory** to avoid `odoo/` directory shadowing:
 
 ```bash
-# You are already in the doodba root, so use relative path
-pip install -e ./odoo/custom/src/odoo
+cd /tmp && "${PROJECT_ROOT}/${VENV_NAME}/bin/python3" -c "import odoo; from odoo import models; print('IMPORT_OK')"
 ```
 
-**Note:** The `-e` flag installs in "editable" mode, which allows setuptools to locate Odoo modules from the source directory.
+**Expected:** `IMPORT_OK`
 
-### Verify Odoo Import Works
-
+**If it fails:** Read the error. Install the missing package, re-run.
 ```bash
-.venv-odoo<ODOO_VERSION>/bin/python3 -c "import odoo; print(odoo.__file__)"
-# Should print something like: /path/to/doodba-root/odoo/custom/src/odoo/__init__.py
+# Example: No module named 'dateutil'
+pip install python-dateutil
+# Re-run smoke test
 ```
 
-If this fails, check:
-- The path to Odoo source is correct
-- The virtual environment was created correctly
-- You are in the Doodba project root directory
+Repeat until `IMPORT_OK`. Common missing packages: `python-dateutil`, `pytz`, `werkzeug`, `lxml`, `psycopg2-binary`.
 
-**For Docker projects:** The virtual environment won't have all runtime dependencies (lxml, PyPDF2, psycopg2, etc.) because they're only available in the Docker container. This is OK for LSP purposes. The LSP server uses the venv only for type resolution and module location, not for executing Odoo code. The import may fail at runtime with `ModuleNotFoundError`, but that doesn't affect LSP functionality. To suppress import-not-found diagnostics in the LSP, we use `diag_missing_imports = "only_odoo"` in `odools.toml` (Step 4).
-
-### Deactivate (Optional)
-
-You don't need the venv activated for normal work — the LSP server will use it via the path in `odools.toml`.
-
+**Validation:**
 ```bash
 deactivate
 ```
 
 ---
 
-## Step 3: Create opencode.json at Doodba Project Root
+## Step 3: Create or Update opencode.json
 
-This file configures OpenCode to launch and manage the LSP server.
+Merge LSP configuration at project root. Preserve existing settings.
 
-### LITERAL — Use Exactly As Shown
-
-Create the file at the **Doodba project root** — the directory containing `devel.yaml`, `.copier-answers.yml`, and `odoo/`:
-
-```
-<doodba-root>/opencode.json
-```
-
-**If the file does NOT exist**, create it with this content:
-
-```json
+```bash
+if [ ! -f "opencode.json" ]; then
+  cat > opencode.json << 'EOF'
 {
   "$schema": "https://opencode.ai/config.json",
   "lsp": {
     "pyright": { "disabled": true },
     "odoo-ls": {
       "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml"],
-      "initialization": {
-        "selectedProfile": "default"
-      }
+      "extensions": [".py", ".xml", ".csv"],
+      "initialization": { "selectedProfile": "default" }
     }
   }
 }
+EOF
+else
+  jq '.lsp.pyright = {"disabled": true} |
+      .lsp["odoo-ls"] = {
+        "command": ["odoo_ls_server"],
+        "extensions": [".py", ".xml", ".csv"],
+        "initialization": {"selectedProfile": "default"}
+      }' opencode.json > opencode.json.tmp && mv opencode.json.tmp opencode.json
+fi
 ```
 
-**If the file already exists**, merge the LSP configuration without overwriting existing settings (MCPs, keybindings, themes, etc.):
-
+**Validation:**
 ```bash
-# Merge: add/update only the lsp section, preserve everything else
-jq '.lsp.pyright = {"disabled": true} |
-    .lsp["odoo-ls"] = {
-      "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml"],
-      "initialization": {"selectedProfile": "default"}
-    }' opencode.json > opencode.json.tmp && mv opencode.json.tmp opencode.json
+jq -e '.lsp["odoo-ls"].extensions | contains([".csv"])' opencode.json >/dev/null && echo "CONFIG_OK"
 ```
-
-Verify the result:
-```bash
-cat opencode.json
-# Should contain the lsp section alongside any pre-existing configuration
-```
-
-### Explanation of Each Field
-
-- **`"pyright": { "disabled": true }`** — Disables OpenCode's built-in Python LSP to avoid duplicate diagnostics. The `odoo_ls_server` provides its own Python diagnostics.
-- **`"command": ["odoo_ls_server"]`** — The LSP server binary to run. It must be on your `PATH` (installed in Step 1 at `~/.local/bin/`).
-- **`"extensions": [".py", ".xml"]`** — File types that trigger the LSP server:
-  - `.py` for Python model/model mixin definitions
-  - `.xml` for Odoo view, action, and report definitions
-  - Do NOT add `.js` — `odoo_ls_server` does not support JavaScript/OWL components yet.
-- **`"initialization": { "selectedProfile": "default" }`** — Matches the profile name in `odools.toml` (see Step 4).
+**Expected:** `CONFIG_OK`
 
 ---
 
-## Step 4: Create odools.toml at Doodba Project Root
+## Step 4: Create or Update odools.toml
 
-This file configures the LSP server itself with paths to Odoo, Python, and addon directories.
+### 4a. Build addon paths dynamically
 
-### Understanding the Structure: Array-of-Tables Syntax
-
-The `odools.toml` file uses TOML's `[[config]]` array-of-tables syntax, NOT bare `[Odoo]` or `[odoo]` sections. The server requires this specific format.
-
-### LITERAL — Use Exactly As Shown (Base Template)
-
-Create the file at the **Doodba project root** — same directory as `opencode.json`:
-
-```
-<doodba-root>/odools.toml
+```bash
+# Find all addon directories excluding the core Odoo source
+ADDON_DIRS=$(find "${ODOO_SRC}/.." -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | sort)
 ```
 
-If this file already exists from a previous setup run, overwrite it — it is managed entirely by this guide.
+### 4b. Determine absolute paths
 
-File content:
+```bash
+PYTHON_PATH=$(realpath "${VENV_NAME}/bin/python3")
+TYPESHED=$(realpath ~/.local/share/odoo-ls/typeshed/stdlib/)/
+```
 
-```toml
+**CRITICAL:** `stdlib` MUST end with `/`.
+
+### 4c. Write config
+
+Preserve existing `addons_paths` if present:
+
+```bash
+if [ -f "odools.toml" ] && grep -q "addons_paths" odools.toml; then
+  EXISTING_ADDONS=$(sed -n '/addons_paths = \[/,/\]/p' odools.toml)
+else
+  EXISTING_ADDONS="addons_paths = [\n$(echo "$ADDON_DIRS" | sed 's|^|  "\${workspaceFolder}/|' | sed 's|$|",|')\n]"
+fi
+
+cat > odools.toml << EOF
 [[config]]
 name = "default"
-odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-python_path = "${workspaceFolder}/.venv-odoo<ODOO_VERSION>/bin/python3"
-stdlib = "/home/<username>/.local/share/odoo-ls/typeshed/stdlib/"
+odoo_path = "\${workspaceFolder}/${ODOO_SRC}"
+python_path = "${PYTHON_PATH}"
+stdlib = "${TYPESHED}"
 diag_missing_imports = "only_odoo"
 refresh_mode = "adaptive"
 
-addons_paths = [
-  # ADD YOUR ADDON DIRECTORIES HERE
-]
+${EXISTING_ADDONS}
+EOF
 ```
 
-Replace placeholders:
-- `<ODOO_VERSION>` — Major version (e.g., `17`)
-- `<username>` — Your system username (e.g., `roly`) — for stdlib path only
-- Add addon directories (see next section)
-
-### Understanding Each Field
-
-- **`name = "default"`** — Profile identifier. Must match `selectedProfile` in `opencode.json` above.
-- **`odoo_path`** — Path to the Odoo source directory (the one containing `odoo/__init__.py`). Uses `${workspaceFolder}` which is expanded by the LSP server at initialization to the Git repository root.
-- **`python_path`** — Absolute path to the Python executable in your venv from Step 2. This Python must have Odoo installed. Example: `/home/roly/projects/binhex/OCA/oca-16/.venv-odoo16/bin/python3`. Do NOT use `${workspaceFolder}` or other variables here — the TOML parser does not expand variables in this field. (The `odoo_path` field uses variables because the LSP server itself expands them at runtime, but `python_path` must be absolute since it's resolved by the tool loading the config file.)
-- **`stdlib`** — Absolute path to typeshed stdlib from Step 1. **CRITICAL: Must have trailing `/`** — Without it, the server fails to find `builtins.pyi`. See https://github.com/odoo/odoo-ls/issues/425#issuecomment-3311402591
-- **`diag_missing_imports = "only_odoo"`** — For Docker projects: suppresses `ModuleNotFound` errors for non-Odoo packages (lxml, werkzeug, psycopg2, etc.) that the host Python doesn't have. These are only available in the Docker container.
-- **`refresh_mode = "adaptive"`** — Correct for OpenCode, which never sends `didSave` notifications, only `didChange`. This tells the server not to wait for explicit save events.
-
-### Configure addons_paths: Two Approaches
-
-Choose **one** approach for populating the `addons_paths` array:
-
-#### Option A: Explicit Repository Paths (RECOMMENDED)
-
-List each addon repository directory explicitly. This avoids symlink deduplication ambiguity.
-
-**Steps:**
-1. Check your Doodba `addons.yaml` for the canonical addon paths:
-   ```bash
-   cat odoo/custom/src/addons.yaml
-   # Lists the main addon repositories (excludes private/ which is auto-detected)
-   ```
-
-2. List all directories under `odoo/custom/src/`:
-   ```bash
-   ls -d odoo/custom/src/*/
-   # Output example:
-   # odoo/custom/src/account-reconcile/
-   # odoo/custom/src/bank-payment/
-   # odoo/custom/src/custom-module/
-   # odoo/custom/src/odoo/  (skip this one - it's the core Odoo package)
-   # odoo/custom/src/private/  (include if it exists and has modules)
-   # odoo/custom/src/web/
-   ```
-
-3. Add all paths EXCEPT `odoo/custom/src/odoo/` to `addons_paths`:
-   ```toml
-   addons_paths = [
-     "${workspaceFolder}/odoo/custom/src/account-reconcile",
-     "${workspaceFolder}/odoo/custom/src/bank-payment",
-     "${workspaceFolder}/odoo/custom/src/custom-module",
-     "${workspaceFolder}/odoo/custom/src/private",  # Include if it has Odoo modules
-     "${workspaceFolder}/odoo/custom/src/web",
-     # ... (continue for all addon repositories)
-   ]
-   ```
-
-**Important notes:**
-- Include `private/` if it contains Odoo modules (it won't be listed in `addons.yaml`)
-- Do NOT include `odoo/custom/src/odoo/` — that's configured separately via `odoo_path`
-- The LSP auto-detects modules inside these directories and their subdirectories
-
-**Why explicit paths?**
-- Avoids deduplication ambiguity with `odoo/auto/addons/` symlink farm
-- LSP anti-deduplication behavior with symlinks is undocumented
-- Deterministic and clear
-- Easy to maintain if repos are cloned/removed
-
-#### Option B: Symlink Farm
-
-If your project auto-generates `odoo/auto/addons/` via `gitaggregate`:
-
-```toml
-addons_paths = [
-  "${workspaceFolder}/odoo/auto/addons",
-]
+**Validation:**
+```bash
+python3 -c "import tomllib; d=tomllib.load(open('odools.toml','rb')); assert d['config'][0]['name']=='default'; assert 'python_path' in d['config'][0]; print('ODOOLS_OK')"
 ```
-
-**Trade-offs:**
-- ✅ Simpler (1 path instead of 30+)
-- ❌ Creates inode aliasing ambiguity (LSP deduplication behavior is undocumented)
-- ❌ May trigger unpredictable deduplication bugs
-
-**Recommendation:** Use Option A unless you have specific reasons for the symlink farm.
-
-### Example Complete odools.toml (Doodba Project)
-
-```toml
-[[config]]
-name = "default"
-odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-python_path = "${workspaceFolder}/.venv-odoo17/bin/python3"
-stdlib = "/home/roly/.local/share/odoo-ls/typeshed/stdlib/"
-diag_missing_imports = "only_odoo"
-refresh_mode = "adaptive"
-
-addons_paths = [
-  "${workspaceFolder}/odoo/custom/src/account-reconcile",
-  "${workspaceFolder}/odoo/custom/src/bank-payment",
-  "${workspaceFolder}/odoo/custom/src/custom-modules",
-  "${workspaceFolder}/odoo/custom/src/web",
-]
-```
+**Expected:** `ODOOLS_OK`
 
 ---
 
 ## Step 5: Verify LSP Configuration
 
-Test that the LSP server is correctly configured before using it with agents.
+### 5a. Parse mode test (standalone)
 
-### Test in Parse Mode (Standalone, No OpenCode Needed)
-
-Parse mode loads the project, generates diagnostics, writes them to a JSON file, then exits. It's useful for testing without needing the LSP server to stay running.
-
-**Important:** `odools.toml` is NOT read in parse mode — all configuration is passed via CLI flags. This is confirmed by the maintainer in issue #425. When testing with `--parse`, always pass all flags explicitly.
+Tests that the server can index the project without OpenCode running.
 
 ```bash
-cd /path/to/your/doodba-root
-
-# Test with a known addon directory
 odoo_ls_server --parse \
-  -c "odoo/custom/src/odoo" \
+  -c "${ODOO_SRC}" \
   -a "odoo/custom/src/account-reconcile" \
   -a "odoo/custom/src/bank-payment" \
-  --python ".venv-odoo<ODOO_VERSION>/bin/python3" \
-  --stdlib "/home/<username>/.local/share/odoo-ls/typeshed/stdlib/" \
+  --python "${PYTHON_PATH}" \
+  --stdlib "${TYPESHED}" \
   -o /tmp/diagnostics.json \
-  --log-level debug
+  --log-level warn
 ```
 
-Replace:
-- `<username>` — Your system username
-- `<ODOO_VERSION>` — Major version (e.g., `17`)
-- `-c <path>` — Odoo source path (relative to doodba root)
-- `-a <path>` — Each addon directory (add one `-a` per directory, or use just 1-2 for testing)
-- `--python <path>` — Python executable from Step 2 (relative path from doodba root)
-- `--stdlib <path>` — Typeshed path from Step 1 (must have trailing `/`)
-- `-o <file>` — Output file for diagnostics JSON
-- `--log-level debug` — Verbose logging (use `info` or `warn` for less output)
-
-**What success looks like:**
-```
-$ odoo_ls_server --parse ... (command above)
-[INFO] Loading project...
-[INFO] Indexing <N> modules...
-[INFO] Complete. Written diagnostics to /tmp/diagnostics.json
-Exit code: 0
-```
-
-**Check the output:**
+**Validation:**
 ```bash
-cat /tmp/diagnostics.json | head -50
-# Should contain JSON with diagnostics entries, or empty array [] if no issues found
+echo "EXIT_CODE=$?"
+python3 -c "import json; data=json.load(open('/tmp/diagnostics.json')); print('DIAGNOSTICS_OK')"
 ```
 
-**Note on parse mode logs:** The logs will show some WARN and ERROR messages, such as:
-- `Module not found for id: account.menu_finance_entries` — Expected for modules outside the indexed addon directories
-- `not handled method: $/progress` — Parser-mode-specific, not relevant to server mode
+**Expected:** `EXIT_CODE=0`, `DIAGNOSTICS_OK`
 
-These are **non-blocking** and do not prevent LSP functionality.
+**Note:** In 1.3.x, using `--config-path` in parse mode may show `Invalid key (workspaceFolder)` errors. These are **non-blocking** — validate by exit code and JSON output, not by log absence.
 
-**If parse mode fails:**
-- Check error messages (usually related to Python or stdlib paths)
-- Verify all `-c`, `-a`, `--python`, `--stdlib` paths exist and are correct
-- See "Important Notes and Limitations" section below for common issues
+### 5b. OpenCode integration test
 
-### Test with OpenCode LSP Server Mode
-
-Once parse mode works, test the LSP server in OpenCode:
+OpenCode auto-starts the LSP server when opening files of configured extensions. Verify diagnostics work for each extension:
 
 ```bash
-# Test diagnostics for a Python file
-opencode debug lsp diagnostics odoo/custom/src/account-reconcile/models/account_move.py
-# (Adapt the path to a real file in your project)
+# Find real files to test
+PY_FILE=$(find odoo/custom/src -name "*.py" -path "*/models/*" | head -1)
+XML_FILE=$(find odoo/custom/src -name "*.xml" | head -1)
+CSV_FILE=$(find odoo/custom/src -name "*.csv" | head -1)
 
-# Should print diagnostics, or "No diagnostics" if file is clean
+# Test diagnostics for each extension
+opencode debug lsp diagnostics "$PY_FILE"
+opencode debug lsp diagnostics "$XML_FILE"
+opencode debug lsp diagnostics "$CSV_FILE"
 ```
 
-### Monitor Indexing Status
+**Expected:** Each command returns a large JSON object with diagnostics. The output includes diagnostics for all indexed files, not just the specified one.
 
-The LSP server loads and indexes your project in the background. Check the logs to see when indexing completes:
+### 5c. Active queries test (optional)
 
-```bash
-# Find the logs directory
-opencode debug paths
-# Then monitor the LSP logs
-tail -f <logs_directory>/opencode-lsp-*.log | grep -E "loadingStatusUpdate|ERROR|WARN"
-# When you see: loadingStatusUpdate: "stop"
-# Indexing is complete and diagnostics are ready
-```
-
-### Automatic Diagnostics (no flag required)
-
-Once the LSP server is running, OpenCode automatically injects diagnostics into tool results after every file edit or write. After the agent edits a `.py` or `.xml` file, it sees output like:
-
-```
-LSP errors detected in this file, please fix:
-<diagnostics file="...">ERROR [line:col] message</diagnostics>
-```
-
-This works for `odoo-ls` exactly like built-in LSPs (pyright, etc.). No flag or extra configuration is needed — having `odoo-ls` in `opencode.json` is sufficient.
-
-### Active Queries (OPENCODE_EXPERIMENTAL_LSP_TOOL=true required)
-
-Active queries are explicit LSP operations the agent can invoke on demand, independently of any file edit:
-
-- **`workspaceSymbol`** — find where a model or class is defined across the whole codebase
-- **`goToDefinition`** — jump to the definition of a symbol at a given position
-- **`hover`** — get type information about a symbol at a given position
-
-These are gated by an experimental flag. Without it, the agent silently falls back to grep/read and never invokes the LSP directly for these operations.
-
-To enable, set the environment variable before starting OpenCode:
-
-```bash
-OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode
-```
-
-Or test directly with a one-shot query:
+For cross-reference capabilities (`workspaceSymbol`, `goToDefinition`, `hover`), set the experimental flag:
 
 ```bash
 OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
-  "Use the lsp tool to query workspaceSymbol for 'AccountMove' (or any model in your project). \
-   Report the file path and line number where this model is defined."
+  "Use the lsp tool to query documentSymbol for the file at ${PY_FILE}"
 ```
 
-Expected: The agent returns a file path to a Python model definition in your addon directories.
+**Note:** The first call may fail with `No LSP server available` (cold-start race condition). Retry after a few seconds. Complex cross-references (`goToDefinition`, `hover` on model classes) may timeout on large projects.
 
 ---
 
-## Important Notes and Limitations
+## Step 6: Post-Setup Feedback
 
-**OpenCode `command` arrays do NOT expand variables** — When using `--config-path`, you must use absolute paths or binaries on `PATH`. Variables like `${workspaceFolder}` are NOT expanded by OpenCode. Variable expansion happens in certain contexts (like `instructions` paths), but not in `lsp.*.command` arrays. If you want to use `--config-path`, pass an absolute path like `["odoo_ls_server", "--config-path", "/absolute/path/odools.toml"]`.
+After successful setup, the agent **MUST** ask the human operator before creating any PR.
 
-**Setting `addons_paths` disables auto-detection** — Any value (including `[]`) disables Odoo LSP's auto-detection. If you need auto-detection alongside explicit paths, add the literal string `"$autoDetectAddons"` to the array.
+```
+Setup completed successfully. Friction points detected:
+- [List any issues encountered: missing deps, path detection ambiguity, etc.]
 
----
+Proposed improvements to the setup guide (generic, version-agnostic):
+- [List improvements]
 
-## IDE Plugin References
+Source instructions: https://github.com/rrebollo/opencode-odoo-ls
+Do you want me to create a PR with these improvements? (yes/no)
+```
 
-The following IDE plugins have been investigated and verified to work with Odoo LSP by sending `workspace/configuration` correctly:
-
-- **VSCode**: https://github.com/odoo/odoo-vscode
-- **PyCharm**: https://github.com/odoo/odoo-pycharm
-- **Neovim**: https://github.com/odoo/odoo-neovim
-- **Zed**: https://github.com/odoo/odoo-zed
-
-All use the same pattern: the profile name in `odools.toml` must match the `selectedProfile` sent by the client.
+**Rules:** No PR without explicit authorization. Frame all changes generically.
 
 ---
 
-## Additional Resources
+## Appendix A: Field Reference
 
-- **Odoo LSP Server Repository:** https://github.com/odoo/odoo-ls
-- **Odoo LSP Configuration Wiki:** https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files
-- **Doodba Project Template:** https://github.com/Tecnativa/doodba-copier-template
-- **OpenCode LSP Documentation:** https://opencode.ai/docs/lsp
-- **This Project's Verified Facts:** See `docs/VERIFIED_FACTS.md` in this repository
+| File | Field | Value | Notes |
+|------|-------|-------|-------|
+| `opencode.json` | `lsp.odoo-ls.extensions` | `[ ".py", ".xml", ".csv" ]` | `.csv` requires 1.3.x+ |
+| `opencode.json` | `lsp.odoo-ls.initialization.selectedProfile` | `"default"` | Must match `odools.toml` profile |
+| `odools.toml` | `python_path` | Absolute path | No variables — TOML parser doesn't expand |
+| `odools.toml` | `stdlib` | `.../typeshed/stdlib/` | **Must end with `/`** |
+| `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
+| `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses Docker-only deps |
+
+## Appendix B: Troubleshooting Quick Reference
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `import odoo` fails | Missing deps or local `odoo/` shadowing | `pip install <missing>`; test from `/tmp` |
+| `psycopg2` build failure | Missing `pg_config` | `pip install psycopg2-binary` |
+| Parse mode exit code ≠ 0 | Wrong paths or broken import | Re-run smoke test; verify all CLI flags |
+| `Invalid key (workspaceFolder)` in parse mode | 1.3.x `--config-path` limitation | Non-blocking — check exit code + JSON |
+| `No LSP server available` on first call | Cold-start race condition | Wait 5s, retry |
+| `goToDefinition`/`hover` timeout | Complex model cross-references | Simpler queries work; full indexing may need time |
