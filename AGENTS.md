@@ -23,7 +23,7 @@ PYTHON_VERSION=$(docker image inspect ghcr.io/tecnativa/doodba:${ODOO_VERSION}-o
 echo "PYTHON_VERSION=${PYTHON_VERSION}"
 
 # 4. Detect tools
-for tool in curl git docker pyenv jq gh; do
+for tool in curl git docker pyenv jq gh unzip; do
   command -v "$tool" >/dev/null 2>&1 && echo "$tool: OK" || echo "$tool: MISSING"
 done
 
@@ -67,18 +67,35 @@ echo "TARGET_RELEASE=${RELEASE}"
 ```bash
 mkdir -p ~/.local/bin ~/.local/share/odoo-ls /tmp/odoo-ls-extract
 
-# Download binary
-curl -L -o /tmp/odoo-ls.tar.gz \
-  "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/odoo-linux-x86_64-${RELEASE}.tar.gz"
+# Idempotency: skip binary download if version already matches
+SKIP_BINARY=false
+if command -v odoo_ls_server >/dev/null 2>&1; then
+  INSTALLED=$(odoo_ls_server --version 2>&1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//')
+  if [ "${INSTALLED}" = "${RELEASE}" ]; then
+    echo "odoo_ls_server ${RELEASE} already installed — skipping download"
+    SKIP_BINARY=true
+  fi
+fi
 
-tar -xzf /tmp/odoo-ls.tar.gz -C /tmp/odoo-ls-extract/
-cp /tmp/odoo-ls-extract/odoo_ls_server ~/.local/bin/
-chmod +x ~/.local/bin/odoo_ls_server
+if [ "$SKIP_BINARY" = false ]; then
+  # Download binary
+  curl -L -o /tmp/odoo-ls.tar.gz \
+    "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/odoo-linux-x86_64-${RELEASE}.tar.gz"
 
-# Download typeshed from same release
-curl -L -o /tmp/typeshed.zip \
-  "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
-unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
+  tar -xzf /tmp/odoo-ls.tar.gz -C /tmp/odoo-ls-extract/
+  cp /tmp/odoo-ls-extract/odoo_ls_server ~/.local/bin/
+  chmod +x ~/.local/bin/odoo_ls_server
+fi
+
+# Idempotency: skip typeshed if already present
+if [ -f ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi ]; then
+  echo "Typeshed already installed — skipping download"
+else
+  # Download typeshed from same release
+  curl -L -o /tmp/typeshed.zip \
+    "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
+  unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
+fi
 
 # Cleanup
 rm -rf /tmp/odoo-ls-extract /tmp/odoo-ls.tar.gz /tmp/typeshed.zip
@@ -101,6 +118,8 @@ ls ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi >/dev/null 2>&1 && echo "
 
 ### 2a. Create and install Odoo
 
+The LSP server runs on your host (not in Docker) and needs a Python interpreter that matches the container's Python version exactly. Type resolution depends on version-specific bytecode and stdlib paths.
+
 ```bash
 VENV_NAME=".venv-odoo${ODOO_VERSION}"
 
@@ -109,12 +128,16 @@ VENV_NAME=".venv-odoo${ODOO_VERSION}"
 
 source "${VENV_NAME}/bin/activate"
 pip install --upgrade pip
+
+# --no-deps avoids heavy binary packages (lxml, psycopg2) that are only available in Docker.
+# The LSP uses the venv for type resolution, not code execution.
+# Missing non-Odoo deps are usually OK, but pre-release versions (1.3.x) may be stricter.
 pip install -e "./${ODOO_SRC}" --no-deps
 ```
 
 ### 2b. Import smoke test (CRITICAL)
 
-Run **from outside the project directory** to avoid `odoo/` directory shadowing:
+Verify Odoo imports **before** deactivating the venv. Run **from outside the project directory** to avoid `odoo/` directory shadowing:
 
 ```bash
 cd /tmp && "${PROJECT_ROOT}/${VENV_NAME}/bin/python3" -c "import odoo; from odoo import models; print('IMPORT_OK')"
@@ -130,6 +153,8 @@ pip install python-dateutil
 ```
 
 Repeat until `IMPORT_OK`. Common missing packages: `python-dateutil`, `pytz`, `werkzeug`, `lxml`, `psycopg2-binary`.
+
+**Note:** In pre-release versions (1.3.x), missing dependencies may cause diagnostics or cross-reference failures even if basic `import odoo` succeeds. Install common packages aggressively if you encounter LSP errors.
 
 **Validation:**
 ```bash
@@ -179,10 +204,19 @@ jq -e '.lsp["odoo-ls"].extensions | contains([".csv"])' opencode.json >/dev/null
 
 ### 4a. Build addon paths dynamically
 
+**For non-Doodba projects:** Adapt the paths below to match your layout. The LSP setup itself is the same for any Odoo environment.
+
 ```bash
-# Find all addon directories excluding the core Odoo source
-ADDON_DIRS=$(find "${ODOO_SRC}/.." -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | sort)
+# Find all directories containing Odoo addons (have at least one __manifest__.py)
+# Excludes the core Odoo source directory
+ADDON_DIRS=$(find "${ODOO_SRC}/.." -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | while read dir; do
+  if [ -n "$(find "$dir" -maxdepth 2 -name "__manifest__.py" -print -quit 2>/dev/null)" ]; then
+    echo "$dir"
+  fi
+done | sort)
 ```
+
+**Note on `private/`:** Doodba projects often have `odoo/custom/src/private/` for custom modules. It is not listed in `addons.yaml` but should be included if it contains modules. The filter above will include it automatically if it has `__manifest__.py` files.
 
 ### 4b. Determine absolute paths
 
@@ -216,6 +250,33 @@ refresh_mode = "adaptive"
 ${EXISTING_ADDONS}
 EOF
 ```
+
+**Example complete odools.toml (Doodba project):**
+
+Use this as a reference to validate your generated config:
+
+```toml
+[[config]]
+name = "default"
+odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
+python_path = "/home/roly/projects/my-doodba/.venv-odoo17/bin/python3"
+stdlib = "/home/roly/.local/share/odoo-ls/typeshed/stdlib/"
+diag_missing_imports = "only_odoo"
+refresh_mode = "adaptive"
+
+addons_paths = [
+  "${workspaceFolder}/odoo/custom/src/account-reconcile",
+  "${workspaceFolder}/odoo/custom/src/bank-payment",
+  "${workspaceFolder}/odoo/custom/src/custom-modules",
+  "${workspaceFolder}/odoo/custom/src/private",
+  "${workspaceFolder}/odoo/custom/src/web",
+]
+```
+
+**Field notes:**
+- `odoo_path` uses `${workspaceFolder}` which is expanded by the LSP server at runtime
+- `python_path` must be absolute — the TOML parser does not expand variables here
+- `stdlib` must end with `/` (see Appendix A)
 
 **Validation:**
 ```bash
@@ -254,7 +315,20 @@ python3 -c "import json; data=json.load(open('/tmp/diagnostics.json')); print('D
 
 ### 5b. OpenCode integration test
 
-OpenCode auto-starts the LSP server when opening files of configured extensions. Verify diagnostics work for each extension:
+OpenCode auto-starts the LSP server when opening files of configured extensions. Once indexing completes, OpenCode **automatically injects diagnostics into tool results after every file edit** — no explicit command required.
+
+Monitor indexing progress to know when diagnostics are ready:
+
+```bash
+# Find the logs directory
+opencode debug paths
+# Then monitor the LSP logs
+tail -f <logs_directory>/opencode-lsp-*.log | grep -E "loadingStatusUpdate|ERROR|WARN"
+# When you see: loadingStatusUpdate: "stop"
+# Indexing is complete and diagnostics are ready
+```
+
+Verify diagnostics work for each extension:
 
 ```bash
 # Find real files to test
