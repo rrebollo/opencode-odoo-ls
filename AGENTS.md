@@ -118,25 +118,29 @@ ls ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi >/dev/null 2>&1 && echo "
 
 ---
 
-## Step 2: Create Virtual Environment at Project Root
+## Step 2: Create Shared Virtual Environment
 
 ### 2a. Create and install Odoo
 
 The LSP server runs on your host (not in Docker) and needs a Python interpreter that matches the container's Python version exactly. Type resolution depends on version-specific bytecode and stdlib paths.
 
 ```bash
-VENV_NAME=".venv-odoo${ODOO_VERSION}"
+# Shared venv location: one venv per (Odoo version, Python version) pair.
+# Multiple projects using the same versions reuse this venv safely —
+# the LSP uses it for type resolution only, never for code execution.
+VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION}-py${PYTHON_VERSION}"
 
-[ -d "${VENV_NAME}" ] || \
-  "$HOME/.pyenv/versions/${PYTHON_VERSION}/bin/python3" -m venv "${VENV_NAME}"
+mkdir -p "${VENV_DIR}"
 
-source "${VENV_NAME}/bin/activate"
+[ -d "${VENV_DIR}/bin" ] || \
+  "$HOME/.pyenv/versions/${PYTHON_VERSION}/bin/python3" -m venv "${VENV_DIR}"
+
+source "${VENV_DIR}/bin/activate"
 pip install --upgrade pip
 
-# --no-deps avoids heavy binary packages (lxml, psycopg2) that are only available in Docker.
-# The LSP uses the venv for type resolution, not code execution.
-# Missing non-Odoo deps are usually OK, but pre-release versions (1.3.x) may be stricter.
-pip install -e "./${ODOO_SRC}" --no-deps
+# Re-run on every setup (last-write wins): ensures the venv reflects
+# the current project's Odoo source. Safe because installs are --no-deps.
+pip install -e "${PROJECT_ROOT}/${ODOO_SRC}" --no-deps
 ```
 
 ### 2b. Import smoke test (CRITICAL)
@@ -144,7 +148,7 @@ pip install -e "./${ODOO_SRC}" --no-deps
 Verify Odoo imports **before** deactivating the venv. Run **from outside the project directory** to avoid `odoo/` directory shadowing:
 
 ```bash
-cd /tmp && "${PROJECT_ROOT}/${VENV_NAME}/bin/python3" -c "import odoo; from odoo import models; print('IMPORT_OK')"
+cd /tmp && "${VENV_DIR}/bin/python3" -c "import odoo; from odoo import models; print('IMPORT_OK')"
 ```
 
 **Expected:** `IMPORT_OK`
