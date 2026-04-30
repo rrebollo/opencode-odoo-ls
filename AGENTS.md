@@ -229,7 +229,7 @@ done | sort)
 ### 4b. Determine absolute paths
 
 ```bash
-PYTHON_PATH=$(realpath "${VENV_NAME}/bin/python3")
+PYTHON_PATH="${VENV_DIR}/bin/python3"
 TYPESHED=$(realpath ~/.local/share/odoo-ls/typeshed/stdlib/)/
 ```
 
