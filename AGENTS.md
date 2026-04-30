@@ -11,6 +11,10 @@ This guide is for **code agents** to execute automatically. Each step includes a
 Detect the environment before configuring. All detected values become placeholders for subsequent steps.
 
 ```bash
+# 0. Capture project root (needed for pip install path later)
+PROJECT_ROOT=$(pwd)
+echo "PROJECT_ROOT=${PROJECT_ROOT}"
+
 # 1. Verify Doodba
 grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA_OK" || echo "NON_DOODBA"
 
