@@ -390,7 +390,7 @@ Do you want me to create a PR with these improvements? (yes/no)
 |------|-------|-------|-------|
 | `opencode.json` | `lsp.odoo-ls.extensions` | `[ ".py", ".xml", ".csv" ]` | `.csv` requires 1.3.x+ |
 | `opencode.json` | `lsp.odoo-ls.initialization.selectedProfile` | `"default"` | Must match `odools.toml` profile |
-| `odools.toml` | `python_path` | Absolute path | No variables — TOML parser doesn't expand |
+| `odools.toml` | `python_path` | `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/bin/python3` | Absolute path; shared across projects with same version pair |
 | `odools.toml` | `stdlib` | `.../typeshed/stdlib/` | **Must end with `/`** |
 | `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
 | `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses Docker-only deps |
