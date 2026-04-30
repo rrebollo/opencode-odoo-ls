@@ -267,7 +267,7 @@ Use this as a reference to validate your generated config:
 [[config]]
 name = "default"
 odoo_path = "${workspaceFolder}/odoo/custom/src/odoo"
-python_path = "/home/roly/projects/my-doodba/.venv-odoo17/bin/python3"
+python_path = "/home/roly/.local/share/odoo-ls/venvs/odoo17-py3.11/bin/python3"
 stdlib = "/home/roly/.local/share/odoo-ls/typeshed/stdlib/"
 diag_missing_imports = "only_odoo"
 refresh_mode = "adaptive"
