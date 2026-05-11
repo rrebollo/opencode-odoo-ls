@@ -300,9 +300,12 @@ python3 -c "import tomllib; d=tomllib.load(open('odools.toml','rb')); assert d['
 
 Tests that the server can index the project without OpenCode running.
 
+**IMPORTANT (v1.3.2+):** The `--tracked-folders` parameter is now **mandatory** when using `--parse`. This specifies which folders contain your custom addon code.
+
 ```bash
 odoo_ls_server --parse \
   -c "${ODOO_SRC}" \
+  --tracked-folders "odoo/custom/src/private" \
   -a "odoo/custom/src/account-reconcile" \
   -a "odoo/custom/src/bank-payment" \
   --python "${PYTHON_PATH}" \
@@ -319,7 +322,7 @@ python3 -c "import json; data=json.load(open('/tmp/diagnostics.json')); print('D
 
 **Expected:** `EXIT_CODE=0`, `DIAGNOSTICS_OK`
 
-**Note:** In 1.3.x, using `--config-path` in parse mode may show `Invalid key (workspaceFolder)` errors. These are **non-blocking** — validate by exit code and JSON output, not by log absence.
+**Note:** In 1.3.x, using `--config-path` in parse mode may show `Invalid key (workspaceFolder)` errors. These are **non-blocking** — validate by exit code and JSON output, not by log absence. In CLI `--parse` mode, variables like `${workspaceFolder}` are NOT expanded—use the `--tracked-folders` parameter instead.
 
 ### 5b. OpenCode integration test
 
