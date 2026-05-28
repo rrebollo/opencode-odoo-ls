@@ -36,8 +36,16 @@ ODOO_SRC=$(find . -maxdepth 4 -name "setup.py" -path "*/odoo/*" ! -path "*/odoo/
 [ -z "$ODOO_SRC" ] && ODOO_SRC=$(find . -maxdepth 3 -name "setup.py" -exec grep -l "find_packages" {} \; 2>/dev/null | head -1 | xargs dirname)
 echo "ODOO_SRC=${ODOO_SRC}"
 
-# 6. Install matching Python (if missing)
-pyenv install -s "${PYTHON_VERSION}"
+# 6. Install matching Python — latest patch in the same minor series
+# Exact patch version match is unnecessary; same minor series (e.g., 3.8.x) is sufficient for LSP type resolution.
+PYTHON_MINOR=$(echo "${PYTHON_VERSION}" | cut -d. -f1-2)
+# Use latest already-installed patch if available, otherwise install latest available patch
+PYTHON_VERSION=$(pyenv versions --bare | grep -E "^${PYTHON_MINOR}\.[0-9]+$" | tail -1)
+if [ -z "${PYTHON_VERSION}" ]; then
+  PYTHON_VERSION=$(pyenv install --list | grep -E "^\s+${PYTHON_MINOR}\.[0-9]+$" | tail -1 | tr -d ' ')
+  pyenv install -s "${PYTHON_VERSION}"
+fi
+echo "PYTHON_VERSION=${PYTHON_VERSION}"
 ```
 
 **Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`.
