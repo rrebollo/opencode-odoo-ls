@@ -315,11 +315,17 @@ Tests that the server can index the project without OpenCode running.
 **IMPORTANT (v1.3.2+):** The `--tracked-folders` parameter is now **mandatory** when using `--parse`. This specifies which folders contain your custom addon code.
 
 ```bash
+# Requires ADDON_DIRS from Step 4a — run in the same shell session
+# --tracked-folders is mandatory in 1.3.2+: defines which files receive diagnostics
+# and acts as ${workspaceFolder} for config resolution
+TRACKED_FLAGS=()
+while IFS= read -r dir; do
+  TRACKED_FLAGS+=(--tracked-folders "${dir}")
+done <<< "$ADDON_DIRS"
+
 odoo_ls_server --parse \
   -c "${ODOO_SRC}" \
-  --tracked-folders "odoo/custom/src/private" \
-  -a "odoo/custom/src/account-reconcile" \
-  -a "odoo/custom/src/bank-payment" \
+  "${TRACKED_FLAGS[@]}" \
   --python "${PYTHON_PATH}" \
   --stdlib "${TYPESHED}" \
   -o /tmp/diagnostics.json \
