@@ -388,7 +388,7 @@ OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
 
 ## Step 6: Post-Setup Feedback
 
-After successful setup, the agent **MUST** ask the human operator before creating any PR.
+After successful setup, the agent **MUST** ask the human operator before raising a GitHub issue.
 
 ```
 Setup completed successfully. Friction points detected:
@@ -398,10 +398,18 @@ Proposed improvements to the setup guide (generic, version-agnostic):
 - [List improvements]
 
 Source instructions: https://github.com/rrebollo/opencode-odoo-ls
-Do you want me to create a PR with these improvements? (yes/no)
+Do you want me to raise a GitHub issue with these findings? (yes/no)
 ```
 
-**Rules:** No PR without explicit authorization. Frame all changes generically.
+**If yes:**
+```bash
+gh issue create \
+  --repo rrebollo/opencode-odoo-ls \
+  --title "Setup friction: [brief summary]" \
+  --body "[friction points and proposed improvements]"
+```
+
+**Rules:** No issue without explicit authorization. Frame all findings generically and version-agnostically.
 
 ---
 
