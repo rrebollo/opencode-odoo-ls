@@ -255,7 +255,7 @@ Preserve existing `addons_paths` if present:
 if [ -f "odools.toml" ] && grep -q "addons_paths" odools.toml; then
   EXISTING_ADDONS=$(sed -n '/addons_paths = \[/,/\]/p' odools.toml)
 else
-  EXISTING_ADDONS="addons_paths = [\n$(echo "$ADDON_DIRS" | sed 's|^|  "\${workspaceFolder}/|' | sed 's|$|",|')\n]"
+  EXISTING_ADDONS="addons_paths = [\n$(echo "$ADDON_DIRS" | sed "s|^${PROJECT_ROOT}/|  \"\${workspaceFolder}/|" | sed 's|$|",|')\n]"
 fi
 
 cat > odools.toml << EOF
