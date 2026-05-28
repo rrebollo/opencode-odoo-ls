@@ -149,6 +149,10 @@ pip install --upgrade pip
 # Re-run on every setup (last-write wins): ensures the venv reflects
 # the current project's Odoo source. Safe because installs are --no-deps.
 pip install -e "${PROJECT_ROOT}/${ODOO_SRC}" --no-deps
+
+# Install Odoo's pinned dependencies from its own requirements.txt
+[ -f "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt" ] && \
+  pip install -r "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt"
 ```
 
 ### 2b. Import smoke test (CRITICAL)
@@ -168,9 +172,9 @@ pip install python-dateutil
 # Re-run smoke test
 ```
 
-Repeat until `IMPORT_OK`. Common missing packages: `python-dateutil`, `pytz`, `werkzeug`, `lxml`, `psycopg2-binary`.
+Repeat until `IMPORT_OK`. If the smoke test still fails after the requirements.txt install, install only what the error message specifically requests — blind installation of packages can introduce version conflicts.
 
-**Note:** In pre-release versions (1.3.x), missing dependencies may cause diagnostics or cross-reference failures even if basic `import odoo` succeeds. Install common packages aggressively if you encounter LSP errors.
+**Note:** In pre-release versions (1.3.x), missing dependencies may cause diagnostics or cross-reference failures even if basic `import odoo` succeeds.
 
 **Validation:**
 ```bash
