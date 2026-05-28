@@ -229,7 +229,7 @@ jq -e '.lsp["odoo-ls"].extensions | contains([".csv"])' opencode.json >/dev/null
 ```bash
 # Find all directories containing Odoo addons (have at least one __manifest__.py)
 # Excludes the core Odoo source directory
-ADDON_DIRS=$(find "${ODOO_SRC}/.." -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | while read dir; do
+ADDON_DIRS=$(find "$(realpath ${ODOO_SRC}/..)" -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | while read dir; do
   if [ -n "$(find "$dir" -maxdepth 2 -name "__manifest__.py" -print -quit 2>/dev/null)" ]; then
     echo "$dir"
   fi
