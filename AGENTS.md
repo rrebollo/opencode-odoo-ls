@@ -415,14 +415,3 @@ Do you want me to create a PR with these improvements? (yes/no)
 | `odools.toml` | `stdlib` | `.../typeshed/stdlib/` | **Must end with `/`** |
 | `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
 | `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses Docker-only deps |
-
-## Appendix B: Troubleshooting Quick Reference
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `import odoo` fails | Missing deps or local `odoo/` shadowing | `pip install <missing>`; test from `/tmp` |
-| `psycopg2` build failure | Missing `pg_config` | `pip install psycopg2-binary` |
-| Parse mode exit code ≠ 0 | Wrong paths or broken import | Re-run smoke test; verify all CLI flags |
-| `Invalid key (workspaceFolder)` in parse mode | 1.3.x `--config-path` limitation | Non-blocking — check exit code + JSON |
-| `No LSP server available` on first call | Cold-start race condition | Wait 5s, retry |
-| `goToDefinition`/`hover` timeout | Complex model cross-references | Simpler queries work; full indexing may need time |
