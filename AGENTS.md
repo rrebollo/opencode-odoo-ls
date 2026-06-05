@@ -165,8 +165,14 @@ pip install --upgrade pip
 pip install -e "${PROJECT_ROOT}/${ODOO_SRC}" --no-deps
 
 # Install Odoo's pinned dependencies from its own requirements.txt
-[ -f "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt" ] && \
-  pip install -r "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt"
+# Note: some requirements.txt files use inline # comments that pip's parser
+# does not accept. Strip them before installation.
+if [ -f "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt" ]; then
+  grep -v '^\s*#' "${PROJECT_ROOT}/${ODOO_SRC}/requirements.txt" \
+    | sed 's/\s*#.*//' \
+    | grep -v '^\s*$' > /tmp/odoo-reqs-clean.txt
+  pip install -r /tmp/odoo-reqs-clean.txt
+fi
 ```
 
 ### 2b. Import smoke test (CRITICAL)
