@@ -60,9 +60,29 @@ if [ -z "${PYTHON_VERSION}" ]; then
   pyenv install -s "${PYTHON_VERSION}"
 fi
 echo "PYTHON_VERSION=${PYTHON_VERSION}"
+
+# 7. Validate all required variables
+_SETUP_OK=true
+for _var in PROJECT_ROOT ODOO_VERSION_FULL ODOO_VERSION PYTHON_VERSION ODOO_SRC; do
+  eval _val=\$$_var
+  if [ -z "${_val}" ]; then
+    echo "ERROR: ${_var} is empty"
+    _SETUP_OK=false
+  fi
+done
+
+if [ "${_SETUP_OK}" = "false" ]; then
+  echo "Environment detection incomplete — fix errors above before continuing"
+  exit 1
+fi
+
+echo "Environment detection OK"
+echo "  Odoo:   ${ODOO_VERSION_FULL}"
+echo "  Python: ${PYTHON_VERSION}"
+echo "  Source: ${ODOO_SRC}"
 ```
 
-**Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`. `ODOO_VERSION_FULL` contains the full dotted version (e.g. `16.0`). `ODOO_VERSION` contains only the major number (e.g. `16`).
+**Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`. `ODOO_VERSION_FULL` contains the full dotted version (e.g. `16.0`). `ODOO_VERSION` contains only the major number (e.g. `16`). Final output shows `Environment detection OK` with non-empty values for all three variables (Odoo, Python, Source).
 
 ---
 
