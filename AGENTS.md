@@ -51,14 +51,15 @@ if [ -z "${ODOO_SRC}" ]; then
 fi
 
 # 6. Install matching Python — latest patch in the same minor series
-# Exact patch version match is unnecessary; same minor series (e.g., 3.8.x) is sufficient for LSP type resolution.
+# PYTHON_VERSION is 2-number minor (e.g. 3.11) for naming.
+# PYENV_VERSION is 3-number patch (e.g. 3.11.9) for the pyenv install path.
 PYTHON_MINOR=$(echo "${PYTHON_VERSION}" | cut -d. -f1-2)
-# Use latest already-installed patch if available, otherwise install latest available patch
-PYTHON_VERSION=$(pyenv versions --bare | grep -E "^${PYTHON_MINOR}\.[0-9]+$" | tail -1)
-if [ -z "${PYTHON_VERSION}" ]; then
-  PYTHON_VERSION=$(pyenv install --list | grep -E "^\s+${PYTHON_MINOR}\.[0-9]+$" | tail -1 | tr -d ' ')
-  pyenv install -s "${PYTHON_VERSION}"
+PYENV_VERSION=$(pyenv versions --bare | grep -E "^${PYTHON_MINOR}\.[0-9]+$" | tail -1)
+if [ -z "${PYENV_VERSION}" ]; then
+  PYENV_VERSION=$(pyenv install --list | grep -E "^\s+${PYTHON_MINOR}\.[0-9]+$" | tail -1 | tr -d ' ')
+  pyenv install -s "${PYENV_VERSION}"
 fi
+PYTHON_VERSION="${PYTHON_MINOR}"
 echo "PYTHON_VERSION=${PYTHON_VERSION}"
 
 # 7. Validate all required variables
@@ -89,6 +90,8 @@ echo "  Source: ${ODOO_SRC}"
 ## Step 1: Install odoo_ls_server Binary and Typeshed
 
 ### 1a. Detect latest pre-release
+
+**Repo note:** The LSP binary is distributed by the upstream project (`odoo/odoo-ls`). The OpenCode configuration wrapper lives at `rrebollo/opencode-odoo-ls` — this guide and issue tracking are at the wrapper repo.
 
 The Odoo LSP project uses odd/even versioning: **odd minor = pre-release** (latest features), **even minor = stable**. Pre-release `1.3.x` is recommended for richer CSV support (go-to-references, xml_id validation, field validation).
 
@@ -170,12 +173,12 @@ The LSP server runs on your host (not in Docker) and needs a Python interpreter 
 # Shared venv location: one venv per (Odoo version, Python version) pair.
 # Multiple projects using the same versions reuse this venv safely —
 # the LSP uses it for type resolution only, never for code execution.
-VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION_FULL}-py${PYTHON_VERSION}"
+VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION}-py${PYTHON_VERSION}"
 
 mkdir -p "${VENV_DIR}"
 
 [ -d "${VENV_DIR}/bin" ] || \
-  "$HOME/.pyenv/versions/${PYTHON_VERSION}/bin/python3" -m venv "${VENV_DIR}"
+  "$HOME/.pyenv/versions/${PYENV_VERSION}/bin/python3" -m venv "${VENV_DIR}"
 
 source "${VENV_DIR}/bin/activate"
 pip install --upgrade pip
@@ -207,6 +210,7 @@ cd /tmp && "${VENV_DIR}/bin/python3" -c "import odoo; from odoo import models; p
 
 **If it fails:** Read the error. Install the missing package, re-run.
 ```bash
+source "${VENV_DIR}/bin/activate"
 # Example: No module named 'dateutil'
 pip install python-dateutil
 # Re-run smoke test
@@ -218,6 +222,7 @@ Repeat until `IMPORT_OK`. If the smoke test still fails after the requirements.t
 
 **Validation:**
 ```bash
+echo "IMPORT_OK"
 deactivate
 ```
 
@@ -282,6 +287,11 @@ done | sort)
 
 ```bash
 PYTHON_PATH="${VENV_DIR}/bin/python3"
+
+if [ ! -d ~/.local/share/odoo-ls/typeshed/stdlib/ ]; then
+  echo "ERROR: typeshed not found. Run Step 1 first."
+  exit 1
+fi
 TYPESHED=$(realpath ~/.local/share/odoo-ls/typeshed/stdlib/)/
 ```
 
@@ -400,10 +410,17 @@ tail -f <logs_directory>/opencode-lsp-*.log | grep -E "loadingStatusUpdate|ERROR
 Verify diagnostics work for each extension:
 
 ```bash
-# Find real files to test
-PY_FILE=$(find odoo/custom/src -name "*.py" -path "*/models/*" | head -1)
-XML_FILE=$(find odoo/custom/src -name "*.xml" | head -1)
-CSV_FILE=$(find odoo/custom/src -name "*.csv" | head -1)
+# Find real files to test (uses ADDON_DIRS from Step 4a if available)
+if [ -n "${ADDON_DIRS:-}" ]; then
+  PY_FILE=$(find ${ADDON_DIRS} -name "*.py" -path "*/models/*" 2>/dev/null | head -1)
+  XML_FILE=$(find ${ADDON_DIRS} -name "*.xml" 2>/dev/null | head -1)
+  CSV_FILE=$(find ${ADDON_DIRS} -name "*.csv" 2>/dev/null | head -1)
+else
+  # Fallback for Doodba layout
+  PY_FILE=$(find odoo/custom/src -name "*.py" -path "*/models/*" | head -1)
+  XML_FILE=$(find odoo/custom/src -name "*.xml" | head -1)
+  CSV_FILE=$(find odoo/custom/src -name "*.csv" | head -1)
+fi
 
 # Test diagnostics for each extension
 opencode debug lsp diagnostics "$PY_FILE"
@@ -430,7 +447,7 @@ OPENCODE_EXPERIMENTAL_LSP_TOOL=true opencode run \
 
 After successful setup, the agent **MUST** ask the human operator before raising a GitHub issue.
 
-```
+```text
 Setup completed successfully. Friction points detected:
 - [List any issues encountered: missing deps, path detection ambiguity, etc.]
 
@@ -459,7 +476,7 @@ gh issue create \
 |------|-------|-------|-------|
 | `opencode.json` | `lsp.odoo-ls.extensions` | `[ ".py", ".xml", ".csv" ]` | `.csv` requires 1.3.x+ |
 | `opencode.json` | `lsp.odoo-ls.initialization.selectedProfile` | `"default"` | Must match `odools.toml` profile |
-| `odools.toml` | `python_path` | `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/bin/python3` | Absolute path; shared across projects with same version pair |
+| `odools.toml` | `python_path` | `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/bin/python3` | Absolute path; shared across projects with same version pair. `<VER>` is major only (e.g. `17`), `<PYVER>` is 2-number minor (e.g. `3.11`) |
 | `odools.toml` | `stdlib` | `.../typeshed/stdlib/` | **Must end with `/`** |
 | `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
 | `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses Docker-only deps |
