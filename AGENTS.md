@@ -19,12 +19,20 @@ echo "PROJECT_ROOT=${PROJECT_ROOT}"
 grep -q 'Tecnativa/doodba-copier-template' .copier-answers.yml 2>/dev/null && echo "DOODBA_OK" || echo "NON_DOODBA"
 
 # 2. Detect Odoo version
-ODOO_VERSION=$(grep -oP 'odoo_version:\s*\K[\d.]+' .copier-answers.yml | cut -d. -f1)
+ODOO_VERSION_FULL=$(grep -oP 'odoo_version:\s*\K[\d.]+' .copier-answers.yml)
+ODOO_VERSION=$(echo "${ODOO_VERSION_FULL}" | cut -d. -f1)
+echo "ODOO_VERSION_FULL=${ODOO_VERSION_FULL}"
 echo "ODOO_VERSION=${ODOO_VERSION}"
 
 # 3. Detect Python version from Docker image
-PYTHON_VERSION=$(docker image inspect ghcr.io/tecnativa/doodba:${ODOO_VERSION}-onbuild 2>/dev/null | grep -oP 'PYTHON_VERSION=\K[^"]+' || echo "MISSING")
+PYTHON_VERSION=$(docker image inspect ghcr.io/tecnativa/doodba:${ODOO_VERSION_FULL}-onbuild 2>/dev/null | grep -oP 'PYTHON_VERSION=\K[^"]+' || echo "MISSING")
 echo "PYTHON_VERSION=${PYTHON_VERSION}"
+
+# Validation
+if [ "${PYTHON_VERSION}" = "MISSING" ]; then
+  echo "ERROR: Could not detect Python version. Confirm image exists: ghcr.io/tecnativa/doodba:${ODOO_VERSION_FULL}-onbuild"
+  exit 1
+fi
 
 # 4. Detect tools
 for tool in curl git docker pyenv jq gh unzip; do
@@ -54,7 +62,7 @@ fi
 echo "PYTHON_VERSION=${PYTHON_VERSION}"
 ```
 
-**Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`.
+**Expected:** All tools show `OK` or `MISSING` (only `gh` may be missing). `ODOO_SRC` points to the directory containing `setup.py`. `ODOO_VERSION_FULL` contains the full dotted version (e.g. `16.0`). `ODOO_VERSION` contains only the major number (e.g. `16`).
 
 ---
 
@@ -142,7 +150,7 @@ The LSP server runs on your host (not in Docker) and needs a Python interpreter 
 # Shared venv location: one venv per (Odoo version, Python version) pair.
 # Multiple projects using the same versions reuse this venv safely —
 # the LSP uses it for type resolution only, never for code execution.
-VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION}-py${PYTHON_VERSION}"
+VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION_FULL}-py${PYTHON_VERSION}"
 
 mkdir -p "${VENV_DIR}"
 
