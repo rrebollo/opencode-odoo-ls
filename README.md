@@ -24,16 +24,16 @@ Once configured, agents working in your Doodba project will receive Odoo-aware d
    ```
    Follow the setup instructions at this URL to configure Odoo LSP 
    support for the current project:
-   https://raw.githubusercontent.com/rrebollo/opencode-odoo-ls/refs/heads/master/AGENTS.md
+   https://raw.githubusercontent.com/rrebollo/opencode-odoo-ls/refs/heads/master/docs/odoo-lsp-doodba-setup.md
    ```
 
-The agent will read the guide and execute all setup steps.
+The agent will read the plan and execute all setup tasks.
 
 ## What the Agent Will Do
 
 - Detect Odoo version and Python version from the project
 - Install `odoo_ls_server` binary and typeshed stubs (if not present)
-- Create `.venv-odoo<VERSION>/` at the project root
+- Create `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/` (shared across projects)
 - Create `opencode.json` and `odools.toml` at the project root
 - Verify the setup with a parse mode test
 
@@ -44,8 +44,9 @@ After the agent completes setup, your project will have:
 ```
 <doodba-root>/
 ├── opencode.json        ← LSP client config for OpenCode
-├── odools.toml          ← LSP server config (paths, addons)
-└── .venv-odoo<VERSION>/ ← Python environment for type resolution
+└── odools.toml          ← LSP server config (paths, addons)
+
+~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/  ← shared Python env (host-wide)
 ```
 
 Agents can now:
@@ -57,4 +58,4 @@ Agents can now:
 
 ## For More Information
 
-See `AGENTS.md` for detailed step-by-step setup instructions, troubleshooting, and technical details.
+See `docs/odoo-lsp-doodba-setup.md` for detailed step-by-step setup instructions.
