@@ -32,9 +32,15 @@ for tool in curl git docker pyenv jq gh unzip; do
 done
 
 # 5. Detect Odoo source dynamically
-ODOO_SRC=$(find . -maxdepth 4 -name "setup.py" -path "*/odoo/*" ! -path "*/odoo/odoo/*" 2>/dev/null | head -1 | xargs -r dirname)
+ODOO_SRC=$(find . -maxdepth 5 -name "setup.py" -path "*/odoo/*" ! -path "*/odoo/odoo/*" 2>/dev/null | head -1 | xargs -r dirname)
 [ -z "$ODOO_SRC" ] && ODOO_SRC=$(find . -maxdepth 3 -name "setup.py" -exec grep -l "find_packages" {} \; 2>/dev/null | head -1 | xargs dirname)
 echo "ODOO_SRC=${ODOO_SRC}"
+
+# Validation
+if [ -z "${ODOO_SRC}" ]; then
+  echo "ERROR: Could not detect Odoo source directory. Expected a setup.py under */odoo/ at depth ≤5."
+  exit 1
+fi
 
 # 6. Install matching Python — latest patch in the same minor series
 # Exact patch version match is unnecessary; same minor series (e.g., 3.8.x) is sufficient for LSP type resolution.
