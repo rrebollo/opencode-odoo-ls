@@ -191,6 +191,11 @@ pip install <missing-package>
 # Re-run smoke test
 ```
 
+**Common build failures (use binary wheels as fallback):**
+- `gevent` C extension fails → `pip install gevent` (gets a binary wheel ≥23.x)
+- `psycopg2` needs `pg_config` → `pip install psycopg2-binary` (same API for dev setups)
+- Other packages with C extensions → prefer binary wheels via `pip install <package> --only-binary :all:`
+
 Repeat until `IMPORT_OK`. Install only what the error requests — blind bulk installs may cause version conflicts.
 
 - [ ] **Deactivate venv**
@@ -246,11 +251,13 @@ jq -e '.lsp["odoo-ls"].extensions | contains([".csv"])' opencode.json >/dev/null
 - [ ] **Build addon paths**
 
 ```bash
-ADDON_DIRS=$(find "$(realpath ${ODOO_SRC}/..)" -maxdepth 1 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | while read dir; do
-  if [ -n "$(find "$dir" -maxdepth 2 -name "__manifest__.py" -print -quit 2>/dev/null)" ]; then
+# Find category-level directories (e.g. odoo/custom/src/oca-16/account) containing addons.
+# This avoids scanning hundreds of individual addon subdirectories and keeps --parse fast.
+ADDON_DIRS=$(find "$(realpath ${ODOO_SRC}/..)" -maxdepth 2 -mindepth 2 -type d ! -name "$(basename ${ODOO_SRC})" ! -name ".*" | while read dir; do
+  if [ -n "$(find "$dir" -name "__manifest__.py" -print -quit 2>/dev/null)" ]; then
     echo "$dir"
   fi
-done | sort)
+done | sort -u)
 ```
 
 - [ ] **Set path variables**
