@@ -93,18 +93,18 @@ echo "  Source: ${ODOO_SRC}"
 
 ## Task 1: Install odoo_ls_server and Typeshed
 
-- [ ] **Detect latest 1.3.x pre-release**
+- [ ] **Detect latest 1.5.x pre-release**
 
 ```bash
 if command -v gh >/dev/null 2>&1; then
-  RELEASE=$(gh release list --repo odoo/odoo-ls --limit 5 --json tagName | jq -r '.[] | select(.tagName | startswith("1.3")) | .tagName' | head -1)
+  RELEASE=$(gh release list --repo odoo/odoo-ls --limit 5 --json tagName | jq -r '.[] | select(.tagName | startswith("1.5")) | .tagName' | head -1)
 else
-  RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.3[^"]*"' | head -1 | cut -d'"' -f4)
+  RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.5[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 echo "TARGET_RELEASE=${RELEASE}"
 ```
 
-**Expected:** `TARGET_RELEASE` starts with `1.3`. If empty, check network.
+**Expected:** `TARGET_RELEASE` starts with `1.5`. If empty, check network.
 
 - [ ] **Download binary and typeshed**
 
@@ -128,7 +128,7 @@ if [ "$SKIP_BINARY" = false ]; then
   chmod +x ~/.local/bin/odoo_ls_server
 fi
 
-if [ -f ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi ]; then
+if [ -f ~/.local/share/odoo-ls/stdlib/builtins.pyi ]; then
   echo "Typeshed already installed — skipping download"
 else
   curl -L -o /tmp/typeshed.zip \
@@ -136,7 +136,7 @@ else
   unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
 fi
 
-rm -rf /tmp/odoo-ls-extract /tmp/odoo-ls.tar.gz /tmp/typeshed.zip
+rm -rf /tmp/odoo-ls-extract /tmp/odoo-ls.tar.gz /tmp/typeshed.zip ~/.local/share/odoo-ls/typeshed 2>/dev/null
 grep -q '\.local/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 export PATH="$HOME/.local/bin:$PATH"
 ```
@@ -145,10 +145,27 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 odoo_ls_server --version
-ls ~/.local/share/odoo-ls/typeshed/stdlib/builtins.pyi >/dev/null 2>&1 && echo "TYPESHED_OK"
+ls ~/.local/share/odoo-ls/stdlib/builtins.pyi >/dev/null 2>&1 && echo "TYPESHED_OK"
 ```
 
-**Expected:** Version shows `1.3.x`. `TYPESHED_OK`.
+**Expected:** Version shows `1.5.x`. `TYPESHED_OK`.
+
+---
+
+## Task 1.5: Install TypeScript 6 (tsserver)
+
+**Required for JavaScript/OWL/template features in odoo-ls 1.5+**
+
+- [ ] **Install TypeScript 6 globally**
+
+```bash
+if ! command -v tsserver >/dev/null 2>&1; then
+  npm install -g typescript@6
+fi
+node -e "console.log('TypeScript', JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).version)" "$(npm root -g)/typescript/package.json"
+```
+
+**Expected:** Output shows `Version 6.x.x` (not 7.x)
 
 ---
 
@@ -220,7 +237,7 @@ if [ ! -f "opencode.json" ]; then
     "pyright": { "disabled": true },
     "odoo-ls": {
       "command": ["odoo_ls_server"],
-      "extensions": [".py", ".xml", ".csv"],
+      "extensions": [".py", ".xml", ".csv", ".js"],
       "initialization": { "selectedProfile": "default" }
     }
   }
@@ -230,7 +247,7 @@ else
   jq '.lsp.pyright = {"disabled": true} |
       .lsp["odoo-ls"] = {
         "command": ["odoo_ls_server"],
-        "extensions": [".py", ".xml", ".csv"],
+        "extensions": [".py", ".xml", ".csv", ".js"],
         "initialization": {"selectedProfile": "default"}
       }' opencode.json > opencode.json.tmp && mv opencode.json.tmp opencode.json
 fi
@@ -239,7 +256,7 @@ fi
 - [ ] **Verify**
 
 ```bash
-jq -e '.lsp["odoo-ls"].extensions | contains([".csv"])' opencode.json >/dev/null && echo "CONFIG_OK"
+jq -e '.lsp["odoo-ls"].extensions | contains([".js"])' opencode.json >/dev/null && echo "CONFIG_OK"
 ```
 
 **Expected:** `CONFIG_OK`
@@ -265,11 +282,11 @@ done | sort -u)
 ```bash
 PYTHON_PATH="${VENV_DIR}/bin/python3"
 
-if [ ! -d ~/.local/share/odoo-ls/typeshed/stdlib/ ]; then
+if [ ! -d ~/.local/share/odoo-ls/stdlib/ ]; then
   echo "ERROR: typeshed not found. Run Task 1 first."
   exit 1
 fi
-TYPESHED=$(realpath ~/.local/share/odoo-ls/typeshed/stdlib/)/
+TYPESHED=$(realpath ~/.local/share/odoo-ls/stdlib/)/
 ```
 
 - [ ] **Write config**
@@ -289,6 +306,11 @@ python_path = "${PYTHON_PATH}"
 stdlib = "${TYPESHED}"
 diag_missing_imports = "only_odoo"
 refresh_mode = "adaptive"
+
+# JavaScript/OWL support (odoo-ls 1.5+)
+# disable_javascript = false   # (default) enable JS/OWL features
+ts_check = true                 # enable TypeScript diagnostics in JS files
+tsserver_command = "tsserver"   # uses globally installed TypeScript 6
 
 ${EXISTING_ADDONS}
 EOF
@@ -414,9 +436,12 @@ gh issue create \
 
 | File | Field | Value | Notes |
 |------|-------|-------|-------|
-| `opencode.json` | `lsp.odoo-ls.extensions` | `[ ".py", ".xml", ".csv" ]` | `.csv` requires `odoo_ls_server` 1.3.x+ |
+| `opencode.json` | `lsp.odoo-ls.extensions` | `[ ".py", ".xml", ".csv", ".js" ]` | `.csv` and `.js` require `odoo_ls_server` 1.5.x+ |
 | `opencode.json` | `lsp.odoo-ls.initialization.selectedProfile` | `"default"` | Must match `odools.toml` profile name |
 | `odools.toml` | `python_path` | `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/bin/python3` | Absolute path; shared across projects with same version pair. `<VER>` is major only (e.g. `17`), `<PYVER>` is 2-number minor (e.g. `3.11`) |
-| `odools.toml` | `stdlib` | `.../typeshed/stdlib/` | **Must end with `/`** |
+| `odools.toml` | `stdlib` | `.../stdlib/` | **Must end with `/`** |
 | `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
 | `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses warnings for Docker-only deps |
+| `odools.toml` | `disable_javascript` | `false` | Enable JS/OWL/template features (1.5+). `false` = enabled |
+| `odools.toml` | `ts_check` | `true` | Enable TypeScript diagnostics in JS files (1.5+) |
+| `odools.toml` | `tsserver_command` | `"tsserver"` | Path to globally installed TypeScript 6 tsserver (1.5+) |
