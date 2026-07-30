@@ -102,9 +102,15 @@ else
   RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.5[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 echo "TARGET_RELEASE=${RELEASE}"
+
+# Fetch config schema for this release (used for config validation)
+mkdir -p ~/.local/share/odoo-ls
+curl -sL "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/config_schema.json" \
+  -o ~/.local/share/odoo-ls/config_schema.json
+echo "CONFIG_SCHEMA=${HOME}/.local/share/odoo-ls/config_schema.json"
 ```
 
-**Expected:** `TARGET_RELEASE` starts with `1.5`. If empty, check network.
+**Expected:** `TARGET_RELEASE` starts with `1.5`. `CONFIG_SCHEMA` points to a valid JSON file. If empty, check network.
 
 - [ ] **Download binary and typeshed**
 
@@ -305,7 +311,7 @@ odoo_path = "\${workspaceFolder}/${ODOO_SRC}"
 python_path = "${PYTHON_PATH}"
 stdlib = "${TYPESHED}"
 diag_missing_imports = "only_odoo"
-refresh_mode = "adaptive"
+# refresh_mode = "adaptive"  # Not in config_schema.json as of 1.5.x; may be ignored by server
 
 # JavaScript/OWL support (odoo-ls 1.5+)
 # disable_javascript = false   # (default) enable JS/OWL features
@@ -323,6 +329,48 @@ python3 -c "import tomllib; d=tomllib.load(open('odools.toml','rb')); assert d['
 ```
 
 **Expected:** `ODOOLS_OK`
+
+---
+
+## Task 4.5: Config Schema Reference
+
+**Purpose:** The `config_schema.json` file (fetched in Task 1) defines all valid `odools.toml` options. Agents should use it to validate configurations during setup or when troubleshooting.
+
+- [ ] **Validate odools.toml against schema**
+
+```bash
+# Quick validation: check that all keys in odools.toml are defined in the schema
+python3 -c "
+import tomllib, json, sys
+
+with open('odools.toml', 'rb') as f:
+    config = tomllib.load(f)
+
+with open('${HOME}/.local/share/odoo-ls/config_schema.json') as f:
+    schema = json.load(f)
+
+valid_keys = set(schema['config']['items']['properties'].keys())
+for profile in config.get('config', []):
+    unknown = set(profile.keys()) - valid_keys
+    if unknown:
+        print(f'WARNING: Unknown keys in profile \"{profile.get(\"name\", \"?\")}\": {unknown}')
+        sys.exit(1)
+
+print('SCHEMA_VALIDATION_OK')
+"
+```
+
+**Expected:** `SCHEMA_VALIDATION_OK` or a list of unknown keys.
+
+**Key options (odoo-ls 1.5+):**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `tsserver_command` | string | `"tsserver"` | Path/command for TypeScript tsserver (JS/OWL support) |
+| `disable_javascript` | boolean | `false` | Set `true` to disable JS/OWL features |
+| `ts_check` | boolean | `false` | Enable TypeScript diagnostics in JS files |
+
+**Note:** For the full list of valid options, refer to the schema at `~/.local/share/odoo-ls/config_schema.json` or fetch it dynamically from the latest release.
 
 ---
 
@@ -440,8 +488,29 @@ gh issue create \
 | `opencode.json` | `lsp.odoo-ls.initialization.selectedProfile` | `"default"` | Must match `odools.toml` profile name |
 | `odools.toml` | `python_path` | `~/.local/share/odoo-ls/venvs/odoo<VER>-py<PYVER>/bin/python3` | Absolute path; shared across projects with same version pair. `<VER>` is major only (e.g. `17`), `<PYVER>` is 2-number minor (e.g. `3.11`) |
 | `odools.toml` | `stdlib` | `.../stdlib/` | **Must end with `/`** |
-| `odools.toml` | `refresh_mode` | `"adaptive"` | OpenCode only sends `didChange` |
+| `odools.toml` | `# refresh_mode` | `"adaptive"` | **Not in config_schema.json** — may be ignored. Commented out by default. |
 | `odools.toml` | `diag_missing_imports` | `"only_odoo"` | Suppresses warnings for Docker-only deps |
 | `odools.toml` | `disable_javascript` | `false` | Enable JS/OWL/template features (1.5+). `false` = enabled |
 | `odools.toml` | `ts_check` | `true` | Enable TypeScript diagnostics in JS files (1.5+) |
 | `odools.toml` | `tsserver_command` | `"tsserver"` | Path to globally installed TypeScript 6 tsserver (1.5+) |
+
+### Schema-only options (available but not used by this guide)
+
+These options are defined in `config_schema.json` and can be added to `odools.toml` if needed:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `extends` | string | — | Name of another profile to inherit from |
+| `$version` | string | — | Odoo version override |
+| `$base` | string | — | Base path |
+| `addons_paths` | array[string] | — | Addon directory paths (auto-detected by this guide) |
+| `addons_merge` | `"merge"` \| `"override"` | — | How to merge addon paths from parent profiles |
+| `additional_stubs` | array[string] | — | Extra stub directories (e.g. lxml) |
+| `additional_stubs_merge` | `"merge"` \| `"override"` | — | How to merge stubs from parent profiles |
+| `additional_languages` | array[string] | — | Extra language codes for data files |
+| `file_cache` | boolean | `true` | Enable file-level caching |
+| `ac_filter_model_names` | boolean | `true` | Filter model names in autocompletion |
+| `auto_refresh_delay` | integer | `1000` | Auto-refresh delay in ms (1000–15000) |
+| `diagnostic_settings` | object | — | Per-diagnostic severity overrides |
+| `diagnostic_filters` | array[object] | — | Path/code/type-based diagnostic filters |
+| `no_typeshed_stubs` | boolean | `false` | Disable typeshed stubs |
