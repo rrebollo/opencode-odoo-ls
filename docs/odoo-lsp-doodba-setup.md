@@ -369,6 +369,9 @@ print('SCHEMA_VALIDATION_OK')
 | `tsserver_command` | string | `"tsserver"` | Path/command for TypeScript tsserver (JS/OWL support) |
 | `disable_javascript` | boolean | `false` | Set `true` to disable JS/OWL features |
 | `ts_check` | boolean | `false` | Enable TypeScript diagnostics in JS files |
+| `disable_semantic_tokens_python` | boolean | `false` | Disable Python semantic tokens |
+| `disable_semantic_tokens_javascript` | boolean | `false` | Disable JavaScript semantic tokens |
+| `disable_semantic_tokens_xml` | boolean | `false` | Disable XML semantic tokens |
 
 **Note:** For the full list of valid options, refer to the schema at `~/.local/share/odoo-ls/config_schema.json` or fetch it dynamically from the latest release.
 
@@ -514,3 +517,6 @@ These options are defined in `config_schema.json` and can be added to `odools.to
 | `diagnostic_settings` | object | — | Per-diagnostic severity overrides |
 | `diagnostic_filters` | array[object] | — | Path/code/type-based diagnostic filters |
 | `no_typeshed_stubs` | boolean | `false` | Disable typeshed stubs |
+| `disable_semantic_tokens_python` | boolean | `false` | Disable Python semantic tokens |
+| `disable_semantic_tokens_javascript` | boolean | `false` | Disable JavaScript semantic tokens |
+| `disable_semantic_tokens_xml` | boolean | `false` | Disable XML semantic tokens |
