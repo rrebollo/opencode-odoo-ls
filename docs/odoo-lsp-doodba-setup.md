@@ -93,13 +93,13 @@ echo "  Source: ${ODOO_SRC}"
 
 ## Task 1: Install odoo_ls_server and Typeshed
 
-- [ ] **Detect latest 1.5.x pre-release**
+- [ ] **Detect latest 1.6.x release**
 
 ```bash
 if command -v gh >/dev/null 2>&1; then
-  RELEASE=$(gh release list --repo odoo/odoo-ls --limit 5 --json tagName | jq -r '.[] | select(.tagName | startswith("1.5")) | .tagName' | head -1)
+  RELEASE=$(gh release list --repo odoo/odoo-ls --limit 30 --json tagName | jq -r '.[] | select(.tagName | startswith("1.6")) | .tagName' | head -1)
 else
-  RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.5[^"]*"' | head -1 | cut -d'"' -f4)
+  RELEASE=$(curl -s https://api.github.com/repos/odoo/odoo-ls/releases | grep -o '"tag_name": "1\.6[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 echo "TARGET_RELEASE=${RELEASE}"
 
@@ -110,7 +110,7 @@ curl -sL "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/config_sc
 echo "CONFIG_SCHEMA=${HOME}/.local/share/odoo-ls/config_schema.json"
 ```
 
-**Expected:** `TARGET_RELEASE` starts with `1.5`. `CONFIG_SCHEMA` points to a valid JSON file. If empty, check network.
+**Expected:** `TARGET_RELEASE` starts with `1.6`. `CONFIG_SCHEMA` points to a valid JSON file. If empty, check network.
 
 - [ ] **Download binary and typeshed**
 
@@ -134,12 +134,24 @@ if [ "$SKIP_BINARY" = false ]; then
   chmod +x ~/.local/bin/odoo_ls_server
 fi
 
-if [ -f ~/.local/share/odoo-ls/stdlib/builtins.pyi ]; then
-  echo "Typeshed already installed — skipping download"
-else
+# The typeshed is release-specific, so skip only when the marker matches the
+# target release. Installations without a marker (made before this existed)
+# are refreshed once, then stay cached.
+TYPESHED_DIR="$HOME/.local/share/odoo-ls"
+TYPESHED_MARKER="${TYPESHED_DIR}/.typeshed_release"
+
+SKIP_TYPESHED=false
+if [ -f "${TYPESHED_DIR}/stdlib/builtins.pyi" ] && \
+   [ "$(cat "${TYPESHED_MARKER}" 2>/dev/null)" = "${RELEASE}" ]; then
+  echo "Typeshed ${RELEASE} already installed — skipping download"
+  SKIP_TYPESHED=true
+fi
+
+if [ "$SKIP_TYPESHED" = false ]; then
   curl -L -o /tmp/typeshed.zip \
     "https://github.com/odoo/odoo-ls/releases/download/${RELEASE}/typeshed.zip"
-  unzip -o /tmp/typeshed.zip -d ~/.local/share/odoo-ls/
+  unzip -o /tmp/typeshed.zip -d "${TYPESHED_DIR}/"
+  echo "${RELEASE}" > "${TYPESHED_MARKER}"
 fi
 
 rm -rf /tmp/odoo-ls-extract /tmp/odoo-ls.tar.gz /tmp/typeshed.zip ~/.local/share/odoo-ls/typeshed 2>/dev/null
@@ -152,9 +164,10 @@ export PATH="$HOME/.local/bin:$PATH"
 ```bash
 odoo_ls_server --version
 ls ~/.local/share/odoo-ls/stdlib/builtins.pyi >/dev/null 2>&1 && echo "TYPESHED_OK"
+cat ~/.local/share/odoo-ls/.typeshed_release 2>/dev/null
 ```
 
-**Expected:** Version shows `1.5.x`. `TYPESHED_OK`.
+**Expected:** Version shows `1.6.x`. `TYPESHED_OK`. Third line prints the release the typeshed was extracted from and must match `TARGET_RELEASE`.
 
 ---
 
@@ -311,7 +324,7 @@ odoo_path = "\${workspaceFolder}/${ODOO_SRC}"
 python_path = "${PYTHON_PATH}"
 stdlib = "${TYPESHED}"
 diag_missing_imports = "only_odoo"
-# refresh_mode = "adaptive"  # Not in config_schema.json as of 1.5.x; may be ignored by server
+# refresh_mode = "adaptive"  # Not in config_schema.json as of 1.6.x; may be ignored by server
 
 # JavaScript/OWL support (odoo-ls 1.5+)
 # disable_javascript = false   # (default) enable JS/OWL features
