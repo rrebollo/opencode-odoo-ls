@@ -10,6 +10,106 @@
 
 ---
 
+## Upgrading an Existing Setup
+
+**Purpose:** Re-run this guide on a project where the integration is already configured — a new `odoo-ls` release, or a setup created by an older version of this guide — instead of starting from zero.
+
+**For agents:** if `opencode.json` or `odools.toml` already exists at the project root, do **not** run this guide top-to-bottom from Task 0. Start with this section, treat the table below as the ordering constraint, then run only the tasks it marks for re-running.
+
+**Rule:** most tasks are idempotent and safe to re-run exactly as written. Three of them are not: **Task 2**, **Task 3** and **Task 4**. Read the table before touching anything.
+
+| Task | On an existing setup | Why |
+|------|----------------------|-----|
+| 0 | Re-run fully | Its shell variables drive every later task, and the shell may have been restarted |
+| 1 | Re-run fully | Refreshes `config_schema.json`, replaces the binary only when `INSTALLED != RELEASE`, and re-extracts `typeshed.zip` only when the `.typeshed_release` marker differs from the target release |
+| 1.5 | Run only if `tsserver` is missing or not 6.x | TypeScript is independent of the server release |
+| 2 | **Skip when the venv directory already exists** | The venv is keyed by (Odoo version, Python version), which a server upgrade does not change. `pip install -e` and the `requirements.txt` install run unconditionally and rebuild work that is already done |
+| 3 | Merge, never recreate | The `jq` branch overwrites only `.lsp.pyright` and `.lsp["odoo-ls"]`, so every other key in `opencode.json` survives. The `cat >` branch must not run on an existing file |
+| 4 | **Back up first, then restore what it drops** | `cat > odools.toml` rewrites the whole file and keeps **only** `addons_paths` |
+| 4.5 | Re-run fully | Must print `SCHEMA_VALIDATION_OK` |
+| 5, 6 | Re-run fully | Proves the new binary actually works on this project |
+| 7 | Report in the chat | Opening a GitHub issue still requires explicit user confirmation |
+
+- [ ] **Record the current state before changing anything**
+
+```bash
+if command -v odoo_ls_server >/dev/null 2>&1; then
+  INSTALLED=$(odoo_ls_server --version 2>&1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//')
+else
+  INSTALLED="none"
+fi
+TYPESHED_RELEASE=$(cat "${HOME}/.local/share/odoo-ls/.typeshed_release" 2>/dev/null || echo "no-marker")
+echo "INSTALLED=${INSTALLED}"
+echo "TYPESHED_RELEASE=${TYPESHED_RELEASE}"
+echo "TARGET_RELEASE=${RELEASE:-not-detected-yet}"   # set by Task 1
+```
+
+**Expected:** If `INSTALLED` and `TYPESHED_RELEASE` already equal `TARGET_RELEASE`, Tasks 1 and 1.5 become no-ops — jump to Task 4.5. If `TYPESHED_RELEASE` is `no-marker`, the typeshed predates the marker and will be refreshed once, then cached.
+
+- [ ] **Back up the project config files** (untracked; delete them once the upgrade is verified)
+
+```bash
+[ -f opencode.json ] && cp -a opencode.json opencode.json.bak && echo "backed up opencode.json" || echo "opencode.json: not present"
+[ -f odools.toml ]   && cp -a odools.toml   odools.toml.bak   && echo "backed up odools.toml"   || echo "odools.toml: not present"
+```
+
+- [ ] **Check whether the shared venv still exists**
+
+```bash
+# Task 2 defines VENV_DIR; derive it here so this check works on its own
+[ -z "${VENV_DIR:-}" ] && VENV_DIR="$HOME/.local/share/odoo-ls/venvs/odoo${ODOO_VERSION}-py${PYTHON_VERSION}"
+[ -d "${VENV_DIR}/bin" ] \
+  && echo "VENV_EXISTS: skipping Task 2" \
+  || echo "VENV_MISSING: run Task 2 in full, stop at IMPORT_OK"
+```
+
+- [ ] **Preserve the settings Task 4 would drop**
+
+Task 4 rebuilds `odools.toml` from its template and carries over `addons_paths` only. After writing it, diff against the backup and restore every key that disappeared:
+
+```bash
+diff odools.toml.bak odools.toml || true
+```
+
+Keys to restore if missing: `additional_stubs`, `additional_stubs_merge`, `diagnostic_settings`, `diagnostic_filters`, `extends`, `$version`, `$base`, `file_cache`, `ac_filter_model_names`, `auto_refresh_delay`, `additional_languages`, `no_typeshed_stubs`, `disable_semantic_tokens_python`, `disable_semantic_tokens_javascript`, `disable_semantic_tokens_xml`, and any additional `[[config]]` profile besides `default`.
+
+- [ ] **Merge Task 3 instead of recreating the file**
+
+Run only the `else` branch of Task 3 when `opencode.json` already exists, then verify and keep the backup around:
+
+```bash
+jq -e '.lsp["odoo-ls"].extensions | contains([".js"])' opencode.json >/dev/null && echo "CONFIG_OK"
+diff opencode.json.bak opencode.json || true
+```
+
+**Expected:** `CONFIG_OK`, and the diff shows changes confined to `.lsp.pyright` and `.lsp["odoo-ls"]`.
+
+- [ ] **Restart the LSP client before Task 6**
+
+The server binary lives on the host at `~/.local/bin`. A client session started before the upgrade keeps running the process it launched, so diagnostics would keep coming from the old version until OpenCode is restarted. Restart, then run Tasks 5 and 6.
+
+- [ ] **Summarise the upgrade** in this format:
+
+```text
+Upgrade completed.
+- Server: <previous version> -> <TARGET_RELEASE>
+- Typeshed marker: <previous marker> -> <TARGET_RELEASE>
+- Skipped: <Task 1.5 / Task 2 / nothing, and why>
+- opencode.json: <changed keys only, from the diff>
+- odools.toml: <settings restored from backup, if any>
+- Verification: <Task 4.5 / Task 5 / Task 6 results>
+
+Friction points detected:
+- [Issues found while upgrading]
+
+Source instructions: https://github.com/rrebollo/opencode-odoo-ls
+Do you want me to raise a GitHub issue with these findings? (yes/no)
+```
+
+**Rules:** Do not edit this guide from the target project — report findings instead. No issue without explicit user confirmation.
+
+---
+
 ## Task 0: Detect Environment
 
 **Purpose:** Gather project metadata. Keep this shell session alive — all detected variables carry forward.
