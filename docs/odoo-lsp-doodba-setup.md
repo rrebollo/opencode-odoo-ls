@@ -349,7 +349,7 @@ with open('odools.toml', 'rb') as f:
 with open('${HOME}/.local/share/odoo-ls/config_schema.json') as f:
     schema = json.load(f)
 
-valid_keys = set(schema['config']['items']['properties'].keys())
+valid_keys = set(schema['properties']['config']['items']['properties'].keys())
 for profile in config.get('config', []):
     unknown = set(profile.keys()) - valid_keys
     if unknown:
